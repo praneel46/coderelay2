@@ -1,0 +1,175 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOrganizer() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'organizer' ||
+        request.auth.token.isOrganizer == true ||
+        exists(/databases/$(database)/documents/organizers/$(request.auth.uid))
+      );
+    }
+
+    function isJudge() {
+      return isAuthenticated() && (
+        request.auth.token.role == 'judge' ||
+        exists(/databases/$(database)/documents/judges/$(request.auth.token.judgeId))
+      );
+    }
+
+    function isParticipant() {
+      return isAuthenticated() && request.auth.token.role == 'participant';
+    }
+
+    function isTeamMember(teamId) {
+      return isParticipant() && request.auth.token.teamId == teamId;
+    }
+
+    // ------------------------------------------------------------
+    // Competition State (/competition/round2)
+    // Server-authoritative: Participants & Judges can only read.
+    // Only Organizers can modify state.
+    // ------------------------------------------------------------
+    match /competition/{roundId} {
+      allow read: if isAuthenticated();
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Teams Collection (/teams/{teamId})
+    // Public details (names, status) readable by all authenticated users.
+    // Writes restricted to Organizers.
+    // ------------------------------------------------------------
+    match /teams/{teamId} {
+      allow read: if isAuthenticated();
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Team Credentials (/team_credentials/{teamId})
+    // CRITICAL: NEVER readable or writable by participants or judges.
+    // Only Cloud Functions (Admin SDK) and Organizers can access.
+    // ------------------------------------------------------------
+    match /team_credentials/{teamId} {
+      allow read, write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Questions Collection (/questions/{questionId})
+    // Questions are readable by all authenticated participants and judges.
+    // Writes restricted to Organizers.
+    // ------------------------------------------------------------
+    match /questions/{questionId} {
+      allow read: if isAuthenticated();
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Private Answers & Solutions (/private_answers/{questionId})
+    // CRITICAL: Under NO circumstances can participants read this.
+    // Judges may read rubrics/solutions if authorized.
+    // Organizers have full read/write access.
+    // ------------------------------------------------------------
+    match /private_answers/{questionId} {
+      allow read: if isOrganizer() || isJudge();
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Submissions Collection (/submissions/{submissionId})
+    // - Organizers & Judges can read all submissions.
+    // - Participants can only read their own team's submissions.
+    // - Submissions cannot be modified once status is 'locked'.
+    // - Submissions cannot be overwritten by other teams.
+    // ------------------------------------------------------------
+    match /submissions/{submissionId} {
+      allow read: if isOrganizer() || isJudge() || (
+        isParticipant() && resource.data.teamId == request.auth.token.teamId
+      );
+      
+      // Participant create/update:
+      allow create: if isParticipant() &&
+        request.resource.data.teamId == request.auth.token.teamId &&
+        request.resource.data.status != 'locked';
+
+      allow update: if (
+        isParticipant() &&
+        request.resource.data.teamId == request.auth.token.teamId &&
+        resource.data.status != 'locked' &&
+        request.resource.data.status != 'locked'
+      ) || isOrganizer();
+
+      allow delete: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Judges Collection (/judges/{judgeId})
+    // Organizers manage judges. Judges can read their own profile.
+    // ------------------------------------------------------------
+    match /judges/{judgeId} {
+      allow read: if isOrganizer() || (isJudge() && request.auth.token.judgeId == judgeId);
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Evaluations Collection (/evaluations/{evaluationId})
+    // Judges can create and update evaluations for assigned teams.
+    // Organizers have full access.
+    // Participants CANNOT read evaluations.
+    // ------------------------------------------------------------
+    match /evaluations/{evaluationId} {
+      allow read: if isOrganizer() || isJudge();
+      allow create, update: if isOrganizer() || isJudge();
+      allow delete: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Results & Leaderboard (/results/{teamId})
+    // Leaderboard entries are readable by all authenticated users.
+    // Only Organizers (or scoring engine) can write results.
+    // ------------------------------------------------------------
+    match /results/{teamId} {
+      allow read: if isAuthenticated();
+      allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Sessions Collection (/sessions/{sessionId})
+    // Tracks live user heartbeats and active devices.
+    // Users can write their own session. Organizers can manage all.
+    // ------------------------------------------------------------
+    match /sessions/{sessionId} {
+      allow read: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated();
+      allow update: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow delete: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Audit Logs (/auditLogs/{logId})
+    // Append-only audit records. Organizers can read.
+    // Participants CANNOT access audit logs.
+    // ------------------------------------------------------------
+    match /auditLogs/{logId} {
+      allow read: if isOrganizer();
+      allow create: if isOrganizer() || isJudge();
+      allow update, delete: if false; // Immutable audit logs
+    }
+
+    // ------------------------------------------------------------
+    // Trusted Organizers Registry (/organizers/{uid})
+    // Read-only for authorization checks.
+    // ------------------------------------------------------------
+    match /organizers/{uid} {
+      allow read: if isAuthenticated();
+      allow write: if false;
+    }
+  }
+}
