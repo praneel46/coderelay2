@@ -113,6 +113,7 @@ export default function AppRouter() {
         />
 
         {/* Organizer Routes */}
+        <Route path="/organizer" element={<Navigate to="/organizer/overview" replace />} />
         <Route path="/organizer/login" element={<OrganizerLogin />} />
         <Route
           path="/organizer/overview"
@@ -180,6 +181,7 @@ export default function AppRouter() {
         />
 
         {/* Judge Routes */}
+        <Route path="/judge" element={<Navigate to="/judge/teams" replace />} />
         <Route path="/judge/login" element={<JudgeLogin />} />
         <Route
           path="/judge/teams"
@@ -205,6 +207,7 @@ export default function AppRouter() {
             </ProtectedRoute>
           }
         />
+        <Route path="/judge/evaluation" element={<Navigate to="/judge/teams" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/participant/login" replace />} />
