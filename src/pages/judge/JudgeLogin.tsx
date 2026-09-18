@@ -9,7 +9,7 @@ export default function JudgeLogin() {
   const navigate = useNavigate();
   const { loginAsJudge, user } = useAuth();
   const [judgeId, setJudgeId] = useState('J001');
-  const [password, setPassword] = useState('judge001');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -22,6 +22,10 @@ export default function JudgeLogin() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!password) {
+      setError('Please enter your judge password.');
+      return;
+    }
     setError(null);
     setIsLoading(true);
 
@@ -79,21 +83,19 @@ export default function JudgeLogin() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1.5">
-                Judge Credential
+                Judge Account
               </label>
               <select
                 value={judgeId}
                 onChange={(e) => {
                   setJudgeId(e.target.value);
-                  if (e.target.value === 'J001') setPassword('judge001');
-                  else if (e.target.value === 'J002') setPassword('judge002');
-                  else if (e.target.value === 'J003') setPassword('judge003');
+                  setError(null);
                 }}
                 className="w-full px-3.5 py-2.5 bg-dark-950 border border-dark-600 rounded-lg text-slate-200 text-sm font-mono outline-none focus:border-emerald-500 transition-colors"
               >
                 {MOCK_JUDGES.map((j) => (
                   <option key={j.judgeId} value={j.judgeId}>
-                    {j.judgeId} — {j.name}
+                    {j.judgeId} — {j.name} ({j.email})
                   </option>
                 ))}
               </select>
@@ -101,15 +103,18 @@ export default function JudgeLogin() {
 
             <div>
               <label className="text-xs font-mono text-slate-400 uppercase tracking-wider block mb-1.5">
-                Evaluation Passkey
+                Judge Password
               </label>
               <div className="relative">
                 <Lock className="w-4 h-4 text-slate-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter judge passkey..."
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  placeholder="Enter judge account password..."
                   required
                   className="w-full pl-10 pr-4 py-2.5 bg-dark-950 border border-dark-600 rounded-lg text-slate-200 text-sm font-mono outline-none focus:border-emerald-500 transition-colors"
                 />
@@ -118,7 +123,7 @@ export default function JudgeLogin() {
 
             <button
               type="submit"
-              disabled={isLoading}
+              disabled={isLoading || !password.trim()}
               className="w-full py-3 px-4 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-dark-950 font-bold text-sm transition-all duration-150 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.5)] disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
               {isLoading ? (
@@ -134,8 +139,7 @@ export default function JudgeLogin() {
 
           <div className="pt-2 border-t border-dark-800 text-center">
             <p className="text-[11px] font-mono text-slate-500">
-              Mock Credentials: <span className="text-emerald-400">J001 / judge001</span> or{' '}
-              <span className="text-emerald-400">J002 / judge002</span>
+              Authorized Accounts: <span className="text-emerald-400">J001 to J006</span>
             </p>
           </div>
         </div>

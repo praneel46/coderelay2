@@ -85,54 +85,95 @@ export async function signInOrganizerWithGoogle(): Promise<AuthUser> {
 }
 
 // ----------------------------------------------------------------
+// 6 Authoritative Judge Accounts (Email to Judge Profile Mapping)
+// ----------------------------------------------------------------
+export interface JudgeProfile {
+  judgeId: string;
+  name: string;
+  email: string;
+}
+
+export const JUDGE_ACCOUNTS: Record<string, JudgeProfile> = {
+  'judge1@coderelay.com': { judgeId: 'J001', name: 'Dr. Anil Krishnan', email: 'judge1@coderelay.com' },
+  'judge2@coderelay.com': { judgeId: 'J002', name: 'Prof. Sunita Menon', email: 'judge2@coderelay.com' },
+  'judge3@coderelay.com': { judgeId: 'J003', name: 'Mr. Ravi Tiwari', email: 'judge3@coderelay.com' },
+  'judge4@coderelay.com': { judgeId: 'J004', name: 'Judge 004', email: 'judge4@coderelay.com' },
+  'judge5@coderelay.com': { judgeId: 'J005', name: 'Judge 005', email: 'judge5@coderelay.com' },
+  'judge6@coderelay.com': { judgeId: 'J006', name: 'Judge 006', email: 'judge6@coderelay.com' },
+};
+
+export const JUDGE_ID_TO_ACCOUNT: Record<string, JudgeProfile> = Object.values(JUDGE_ACCOUNTS).reduce(
+  (acc, curr) => {
+    acc[curr.judgeId.toUpperCase()] = curr;
+    return acc;
+  },
+  {} as Record<string, JudgeProfile>
+);
+
+// ----------------------------------------------------------------
 // Judge Sign-In
 // ----------------------------------------------------------------
 /**
- * Authenticate judge via email/password or custom credential validation.
+ * Authenticate judge via Firebase Authentication using the 6 authorized accounts.
+ * Accepts either Judge ID (J001-J006) or direct judge email.
+ * Passwords are never hardcoded or exposed.
  */
 export async function signInJudgeWithCredentials(
-  judgeId: string,
+  judgeIdOrEmail: string,
   password: string
 ): Promise<AuthUser> {
-  // Option A: If configured with Firebase Auth email
-  // Format: judgeId@vidyantra.internal
-  const judgeEmail = `${judgeId.toLowerCase()}@vidyantra.internal`;
+  const normalized = judgeIdOrEmail.trim().toLowerCase();
+  let judgeEmail = '';
+
+  if (normalized.includes('@')) {
+    judgeEmail = normalized;
+    const match = JUDGE_ACCOUNTS[judgeEmail];
+    if (!match) {
+      throw new Error('ACCESS DENIED: Email is not an authorized judge account.');
+    }
+  } else {
+    const match = JUDGE_ID_TO_ACCOUNT[judgeIdOrEmail.trim().toUpperCase()];
+    if (!match) {
+      throw new Error(`Invalid Judge ID: ${judgeIdOrEmail}. Authorized IDs are J001 through J006.`);
+    }
+    judgeEmail = match.email;
+  }
 
   try {
     const cred = await signInWithEmailAndPassword(auth, judgeEmail, password);
-    const tokenResult = await cred.user.getIdTokenResult();
-    const role = (tokenResult.claims.role as AuthRole) || 'judge';
+    const userEmail = (cred.user.email || judgeEmail).toLowerCase();
+    const account = JUDGE_ACCOUNTS[userEmail];
 
-    // Verify against judges document
-    const judgeDocRef = doc(db, COLLECTIONS.JUDGES, judgeId);
-    const judgeDoc = await getDoc(judgeDocRef);
-    const judgeName = judgeDoc.exists() ? judgeDoc.data().name : `Judge ${judgeId}`;
+    if (!account) {
+      await signOut(auth);
+      throw new Error('ACCESS DENIED: Authenticated account is not an authorized judge.');
+    }
+
+    // Verify against judges document if available
+    let judgeName = account.name;
+    try {
+      const judgeDocRef = doc(db, COLLECTIONS.JUDGES, account.judgeId);
+      const judgeDoc = await getDoc(judgeDocRef);
+      if (judgeDoc.exists() && judgeDoc.data().name) {
+        judgeName = judgeDoc.data().name;
+      }
+    } catch {
+      // Use fallback configured profile name
+    }
 
     return {
-      role: role === 'judge' ? 'judge' : 'judge',
-      judgeId,
+      role: 'judge',
+      judgeId: account.judgeId,
       judgeName,
     };
   } catch (error: any) {
-    // If Firebase Auth fails, try Cloud Function validation or throw
-    try {
-      const verifyJudgeFn = httpsCallable<{ judgeId: string; password: string }, { customToken: string; judgeName: string }>(
-        functions,
-        'verifyJudgeCredentials'
-      );
-      const res = await verifyJudgeFn({ judgeId, password });
-      if (res.data.customToken) {
-        await signInWithCustomToken(auth, res.data.customToken);
-        return {
-          role: 'judge',
-          judgeId,
-          judgeName: res.data.judgeName,
-        };
-      }
-    } catch {
-      // Re-throw original credentials error
+    if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+      throw new Error('Invalid password for this judge account.');
     }
-    throw new Error(error.message || 'Invalid Judge ID or credentials.');
+    if (error.code === 'auth/user-not-found') {
+      throw new Error('Judge account not found in Firebase Authentication.');
+    }
+    throw new Error(error.message || 'Invalid Judge credentials.');
   }
 }
 
@@ -198,12 +239,16 @@ export function subscribeToFirebaseAuthState(
         return;
       }
 
-      if (role === 'judge') {
-        const judgeId = (tokenResult.claims.judgeId as string) || '';
+      const userEmail = (user.email || '').toLowerCase();
+      const judgeAccount = JUDGE_ACCOUNTS[userEmail];
+
+      if (role === 'judge' || judgeAccount) {
+        const judgeId = (tokenResult.claims.judgeId as string) || judgeAccount?.judgeId || '';
+        const judgeName = (tokenResult.claims.name as string) || judgeAccount?.name || `Judge ${judgeId}`;
         onUserChanged({
           role: 'judge',
           judgeId,
-          judgeName: (tokenResult.claims.name as string) || `Judge ${judgeId}`,
+          judgeName,
         });
         return;
       }

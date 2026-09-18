@@ -71,14 +71,18 @@ export class MockDataProvider implements IDataProvider {
 
   async loginJudge(judgeId: string, password: string): Promise<AuthUser> {
     await new Promise((r) => setTimeout(r, 400));
-    const judgeCredentials: Record<string, { name: string; password: string }> = {
-      J001: { name: 'Dr. Anil Krishnan', password: 'judge001' },
-      J002: { name: 'Prof. Sunita Menon', password: 'judge002' },
-      J003: { name: 'Mr. Ravi Tiwari', password: 'judge003' },
+    const judgeProfiles: Record<string, { name: string }> = {
+      J001: { name: 'Dr. Anil Krishnan' },
+      J002: { name: 'Prof. Sunita Menon' },
+      J003: { name: 'Mr. Ravi Tiwari' },
+      J004: { name: 'Judge 004' },
+      J005: { name: 'Judge 005' },
+      J006: { name: 'Judge 006' },
     };
-    const judge = judgeCredentials[judgeId];
-    if (!judge || judge.password !== password) {
-      throw new Error('Invalid Judge ID or password.');
+    const normalizedId = judgeId.trim().toUpperCase();
+    const judge = judgeProfiles[normalizedId];
+    if (!judge || !password.trim()) {
+      throw new Error(`Invalid Judge ID (${judgeId}) or password.`);
     }
     const user: AuthUser = {
       role: 'judge',

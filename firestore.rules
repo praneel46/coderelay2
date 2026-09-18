@@ -20,7 +20,15 @@ service cloud.firestore {
     function isJudge() {
       return isAuthenticated() && (
         request.auth.token.role == 'judge' ||
-        exists(/databases/$(database)/documents/judges/$(request.auth.token.judgeId))
+        exists(/databases/$(database)/documents/judges/$(request.auth.token.judgeId)) ||
+        request.auth.token.email in [
+          'judge1@coderelay.com',
+          'judge2@coderelay.com',
+          'judge3@coderelay.com',
+          'judge4@coderelay.com',
+          'judge5@coderelay.com',
+          'judge6@coderelay.com'
+        ]
       );
     }
 
@@ -114,7 +122,7 @@ service cloud.firestore {
     // Organizers manage judges. Judges can read their own profile.
     // ------------------------------------------------------------
     match /judges/{judgeId} {
-      allow read: if isOrganizer() || (isJudge() && request.auth.token.judgeId == judgeId);
+      allow read: if isOrganizer() || isJudge();
       allow write: if isOrganizer();
     }
 
