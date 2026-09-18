@@ -11,36 +11,53 @@ service cloud.firestore {
 
     function isOrganizer() {
       return isAuthenticated() && (
-        request.auth.token.role == 'organizer' ||
-        request.auth.token.isOrganizer == true ||
+        request.auth.token.get('role', '') == 'organizer' ||
+        request.auth.token.get('isOrganizer', false) == true ||
         exists(/databases/$(database)/documents/organizers/$(request.auth.uid)) ||
-        (request.auth.token.email != null &&
-         exists(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.email.lower())) &&
-         get(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.email.lower())).data.authorized == true)
+        (request.auth.token.get('email', '') != '' &&
+         exists(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())) &&
+         get(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())).data.authorized == true)
       );
     }
 
     function isJudge() {
       return isAuthenticated() && (
-        request.auth.token.role == 'judge' ||
-        exists(/databases/$(database)/documents/judges/$(request.auth.token.judgeId)) ||
-        request.auth.token.email in [
+        request.auth.token.get('role', '') == 'judge' ||
+        (request.auth.token.get('email', '') != '' && request.auth.token.get('email', '').lower() in [
           'judge1@coderelay.com',
           'judge2@coderelay.com',
           'judge3@coderelay.com',
           'judge4@coderelay.com',
           'judge5@coderelay.com',
           'judge6@coderelay.com'
-        ]
+        ])
       );
     }
 
+    function currentJudgeId() {
+      return request.auth.token.get('judgeId', '') != '' ?
+        request.auth.token.get('judgeId', '') :
+        (request.auth.token.get('email', '').lower() == 'judge1@coderelay.com' ? 'J001' :
+         request.auth.token.get('email', '').lower() == 'judge2@coderelay.com' ? 'J002' :
+         request.auth.token.get('email', '').lower() == 'judge3@coderelay.com' ? 'J003' :
+         request.auth.token.get('email', '').lower() == 'judge4@coderelay.com' ? 'J004' :
+         request.auth.token.get('email', '').lower() == 'judge5@coderelay.com' ? 'J005' :
+         request.auth.token.get('email', '').lower() == 'judge6@coderelay.com' ? 'J006' : '');
+    }
+
+    function isJudgeAssignedToTeam(teamId) {
+      return isJudge() &&
+        currentJudgeId() != '' &&
+        exists(/databases/$(database)/documents/judges/$(currentJudgeId())) &&
+        teamId in get(/databases/$(database)/documents/judges/$(currentJudgeId())).data.assignedTeamIds;
+    }
+
     function isParticipant() {
-      return isAuthenticated() && request.auth.token.role == 'participant';
+      return isAuthenticated() && request.auth.token.get('role', '') == 'participant';
     }
 
     function isTeamMember(teamId) {
-      return isParticipant() && request.auth.token.teamId == teamId;
+      return isParticipant() && request.auth.token.get('teamId', '') == teamId;
     }
 
     // ------------------------------------------------------------
@@ -95,26 +112,28 @@ service cloud.firestore {
 
     // ------------------------------------------------------------
     // Submissions Collection (/submissions/{submissionId})
-    // - Organizers & Judges can read all submissions.
-    // - Participants can only read their own team's submissions.
+    // - Organizers can read all submissions.
+    // - Judges can read ONLY submissions belonging to teams assigned to that judge.
+    // - Participants can read ONLY their own team's submissions.
     // - Submissions cannot be modified once status is 'locked'.
     // - Submissions cannot be overwritten by other teams.
     // ------------------------------------------------------------
     match /submissions/{submissionId} {
-      allow read: if isOrganizer() || isJudge() || (
-        isParticipant() && resource.data.teamId == request.auth.token.teamId
-      );
+      allow read: if isOrganizer() ||
+        isJudgeAssignedToTeam(resource.data.teamId) ||
+        (isParticipant() && resource.data.teamId == request.auth.token.get('teamId', ''));
       
       // Participant create/update:
       allow create: if isParticipant() &&
-        request.resource.data.teamId == request.auth.token.teamId &&
-        request.resource.data.status != 'locked';
+        request.resource.data.teamId == request.auth.token.get('teamId', '') &&
+        request.resource.data.get('status', '') != 'locked';
 
       allow update: if (
         isParticipant() &&
-        request.resource.data.teamId == request.auth.token.teamId &&
-        resource.data.status != 'locked' &&
-        request.resource.data.status != 'locked'
+        request.resource.data.teamId == request.auth.token.get('teamId', '') &&
+        resource.data.teamId == request.auth.token.get('teamId', '') &&
+        resource.data.get('status', '') != 'locked' &&
+        request.resource.data.get('status', '') != 'locked'
       ) || isOrganizer();
 
       allow delete: if isOrganizer();
@@ -122,22 +141,44 @@ service cloud.firestore {
 
     // ------------------------------------------------------------
     // Judges Collection (/judges/{judgeId})
-    // Organizers manage judges. Judges can read their own profile.
+    // - Organizers can read and write all judge profiles.
+    // - A judge can read ONLY their own judge profile.
+    // - A judge must NOT be able to read other judges' profiles.
     // ------------------------------------------------------------
     match /judges/{judgeId} {
-      allow read: if isOrganizer() || isJudge();
+      allow read: if isOrganizer() || (
+        isJudge() && currentJudgeId() == judgeId
+      );
       allow write: if isOrganizer();
     }
 
     // ------------------------------------------------------------
     // Evaluations Collection (/evaluations/{evaluationId})
-    // Judges can create and update evaluations for assigned teams.
-    // Organizers have full access.
-    // Participants CANNOT read evaluations.
+    // - Organizers have full read/create/update/delete access.
+    // - Judges can read evaluations ONLY for their assigned teams.
+    // - Judges can create/update evaluations ONLY for their assigned teams.
+    // - Judges cannot evaluate an unassigned team.
+    // - Judges cannot delete evaluations.
+    // - Participants CANNOT read evaluations.
     // ------------------------------------------------------------
     match /evaluations/{evaluationId} {
-      allow read: if isOrganizer() || isJudge();
-      allow create, update: if isOrganizer() || isJudge();
+      allow read: if isOrganizer() || (
+        isJudge() &&
+        isJudgeAssignedToTeam(resource.data.teamId) &&
+        resource.data.judgeId == currentJudgeId()
+      );
+      allow create: if isOrganizer() || (
+        isJudge() &&
+        isJudgeAssignedToTeam(request.resource.data.teamId) &&
+        request.resource.data.judgeId == currentJudgeId()
+      );
+      allow update: if isOrganizer() || (
+        isJudge() &&
+        isJudgeAssignedToTeam(resource.data.teamId) &&
+        isJudgeAssignedToTeam(request.resource.data.teamId) &&
+        resource.data.judgeId == currentJudgeId() &&
+        request.resource.data.judgeId == currentJudgeId()
+      );
       allow delete: if isOrganizer();
     }
 
@@ -158,7 +199,7 @@ service cloud.firestore {
     // ------------------------------------------------------------
     match /sessions/{sessionId} {
       allow read: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow delete: if isOrganizer();
     }
@@ -177,19 +218,23 @@ service cloud.firestore {
     // ------------------------------------------------------------
     // Authorized Organizer Emails Whitelist (/authorized_organizer_emails/{email})
     // Read-only for authorization checks: authenticated users can only read
-    // their own email document.
+    // their own authorization document, which must have authorized == true.
     // ------------------------------------------------------------
     match /authorized_organizer_emails/{email} {
-      allow read: if isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email.lower();
+      allow read: if isAuthenticated() &&
+        request.auth.token.get('email', '') != '' &&
+        request.auth.token.get('email', '').lower() == email.lower() &&
+        resource.data.authorized == true;
       allow write: if false;
     }
 
     // ------------------------------------------------------------
     // Trusted Organizers Registry (/organizers/{uid})
-    // Read-only for authorization checks.
+    // Read-only for authorization checks: restricted to the user's
+    // own UID document or authorized organizers.
     // ------------------------------------------------------------
     match /organizers/{uid} {
-      allow read: if isAuthenticated();
+      allow read: if isAuthenticated() && (request.auth.uid == uid || isOrganizer());
       allow write: if false;
     }
   }
