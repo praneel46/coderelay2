@@ -1,6 +1,12 @@
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 
+const ALLOWED_ORIGINS = [
+  'https://coderelay2.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
 const STRIKE_DURATIONS: Record<string, number> = {
   strike1: 5 * 60,   // 5 minutes in seconds
   strike2: 15 * 60,  // 15 minutes in seconds
@@ -21,7 +27,7 @@ function assertOrganizer(auth: any) {
  * Authoritative Start Strike Cloud Function.
  * Determines official server timestamps for startTime and endTime.
  */
-export const startStrike = onCall(async (request) => {
+export const startStrike = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   assertOrganizer(request.auth);
 
   const { strikeId } = request.data || {};
@@ -94,7 +100,7 @@ export const startStrike = onCall(async (request) => {
 /**
  * Authoritative End Strike Cloud Function.
  */
-export const endStrike = onCall(async (request) => {
+export const endStrike = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   assertOrganizer(request.auth);
 
   const { strikeId } = request.data || {};
@@ -136,7 +142,7 @@ export const endStrike = onCall(async (request) => {
 /**
  * Authoritative Pause Competition.
  */
-export const pauseCompetition = onCall(async (request) => {
+export const pauseCompetition = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   assertOrganizer(request.auth);
   const db = admin.firestore();
   const nowIso = new Date().toISOString();
@@ -164,7 +170,7 @@ export const pauseCompetition = onCall(async (request) => {
 /**
  * Authoritative Resume Competition.
  */
-export const resumeCompetition = onCall(async (request) => {
+export const resumeCompetition = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   assertOrganizer(request.auth);
   const db = admin.firestore();
   const nowIso = new Date().toISOString();
@@ -192,7 +198,7 @@ export const resumeCompetition = onCall(async (request) => {
 /**
  * Authoritative Emergency Lock.
  */
-export const emergencyLock = onCall(async (request) => {
+export const emergencyLock = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   assertOrganizer(request.auth);
   const db = admin.firestore();
   const nowIso = new Date().toISOString();

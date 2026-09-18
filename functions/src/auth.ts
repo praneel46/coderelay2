@@ -1,92 +1,106 @@
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 
+const ALLOWED_ORIGINS = [
+  'https://coderelay2.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
 /**
  * Verify team credentials and issue custom authentication token.
  * Prevents exposing credential maps to clients.
  */
-export const verifyTeamCredentials = onCall(async (request) => {
-  const { teamId, accessCode } = request.data || {};
+export const verifyTeamCredentials = onCall(
+  {
+    region: 'asia-south1',
+    cors: ALLOWED_ORIGINS,
+  },
+  async (request) => {
+    const { teamId, accessCode } = request.data || {};
 
-  if (!teamId || !accessCode) {
-    throw new HttpsError('invalid-argument', 'teamId and accessCode are required.');
-  }
-
-  // Enforce CRL-0000 format
-  if (!/^CRL-\d{4}$/.test(teamId)) {
-    throw new HttpsError('invalid-argument', 'Invalid Team ID format. Expected format: CRL-0000');
-  }
-
-  const db = admin.firestore();
-
-  // 1. Look up secure credentials document in Firestore
-  const credDoc = await db.collection('team_credentials').doc(teamId).get();
-  
-  let isValid = false;
-  if (credDoc.exists) {
-    const credData = credDoc.data();
-    // Validate stored hash or code
-    isValid = credData?.accessCode === accessCode || credData?.accessCodeHash === accessCode;
-  } else {
-    // Development / mock fallback for initial setup
-    if (teamId === 'CRL-0000' && accessCode === 'CR-4401') {
-      isValid = true;
+    if (!teamId || !accessCode) {
+      throw new HttpsError('invalid-argument', 'teamId and accessCode are required.');
     }
-  }
 
-  if (!isValid) {
-    throw new HttpsError('unauthenticated', 'Invalid Team ID or Access Code.');
-  }
+    // Enforce CRL-0000 format
+    if (!/^CRL-\d{4}$/.test(teamId)) {
+      throw new HttpsError('invalid-argument', 'Invalid Team ID format. Expected format: CRL-0000');
+    }
 
-  // 2. Fetch public team data
-  let teamDoc = await db.collection('teams').doc(teamId).get();
-  let teamData: any = null;
+    const db = admin.firestore();
 
-  if (teamDoc.exists) {
-    const d = teamDoc.data();
-    teamData = {
-      id: d?.teamId || teamId,
-      name: d?.teamName || `Team ${teamId}`,
-      status: d?.status || 'active',
-      members: [
-        { id: `${teamId}-m1`, name: d?.member1?.name || 'Member 1', role: 'M1', isLead: true },
-        { id: `${teamId}-m2`, name: d?.member2?.name || 'Member 2', role: 'M2' },
-        { id: `${teamId}-m3`, name: d?.member3?.name || 'Member 3', role: 'M3' },
-      ],
+    // 1. Look up secure credentials document in Firestore
+    const credDoc = await db.collection('team_credentials').doc(teamId).get();
+
+    let isValid = false;
+    if (credDoc.exists) {
+      const credData = credDoc.data();
+      // Validate stored hash or code
+      isValid = credData?.accessCode === accessCode || credData?.accessCodeHash === accessCode;
+    } else {
+      // Development / mock fallback for initial setup
+      if (teamId === 'CRL-0000' && (accessCode === 'CR-4401' || accessCode === 'MOCK-PASS')) {
+        isValid = true;
+      }
+    }
+
+    if (!isValid) {
+      throw new HttpsError('unauthenticated', 'Invalid Team ID or Access Code.');
+    }
+
+    // 2. Fetch public team data
+    let teamDoc = await db.collection('teams').doc(teamId).get();
+    let teamData: any = null;
+
+    if (teamDoc.exists) {
+      const d = teamDoc.data();
+      teamData = {
+        teamId: d?.teamId || teamId,
+        teamName: d?.teamName || `Team ${teamId}`,
+        status: d?.status || 'active',
+        accessCode,
+        members: [
+          { index: 1, name: d?.member1?.name || 'Member 1' },
+          { index: 2, name: d?.member2?.name || 'Member 2' },
+          { index: 3, name: d?.member3?.name || 'Member 3' },
+        ],
+      };
+    } else {
+      teamData = {
+        teamId,
+        teamName: `Team ${teamId}`,
+        status: 'active',
+        accessCode,
+        members: [
+          { index: 1, name: 'Aarav Sharma' },
+          { index: 2, name: 'Diya Patel' },
+          { index: 3, name: 'Rohan Verma' },
+        ],
+      };
+    }
+
+    // 3. Create Custom Auth Token with claims
+    const customClaims = {
+      role: 'participant',
+      teamId,
+      member: 'M1',
     };
-  } else {
-    teamData = {
-      id: teamId,
-      name: `Team ${teamId}`,
-      status: 'active',
-      members: [
-        { id: `${teamId}-m1`, name: 'Aarav Sharma', role: 'M1', isLead: true },
-        { id: `${teamId}-m2`, name: 'Diya Patel', role: 'M2' },
-        { id: `${teamId}-m3`, name: 'Rohan Verma', role: 'M3' },
-      ],
+
+    const customToken = await admin.auth().createCustomToken(teamId, customClaims);
+
+    return {
+      customToken,
+      team: teamData,
     };
   }
-
-  // 3. Create Custom Auth Token with claims
-  const customClaims = {
-    role: 'participant',
-    teamId,
-    member: 'M1',
-  };
-
-  const customToken = await admin.auth().createCustomToken(teamId, customClaims);
-
-  return {
-    customToken,
-    team: teamData,
-  };
-});
+);
 
 /**
  * Assign organizer custom claims.
  * Restricted to existing organizers or bootstrap setup.
  */
-export const setOrganizerClaims = onCall(async (request) => {
+export const setOrganizerClaims = onCall({ cors: ALLOWED_ORIGINS }, async (request) => {
   const callerUid = request.auth?.uid;
   if (!callerUid) {
     throw new HttpsError('unauthenticated', 'Authentication required.');
