@@ -110,7 +110,7 @@ export class MockDataProvider implements IDataProvider {
   // ------------------------------------------------------------
   // Competition State
   // ------------------------------------------------------------
-  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void): () => void {
+  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void, _onError?: (err: Error) => void): () => void {
     const current = loadFromStorage(COMP_STATE_KEY, MOCK_INITIAL_STATE);
     onUpdate(current);
 
@@ -214,7 +214,7 @@ export class MockDataProvider implements IDataProvider {
   // ------------------------------------------------------------
   // Leaderboard & Scoring
   // ------------------------------------------------------------
-  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void): () => void {
+  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void, _onError?: (err: Error) => void): () => void {
     const current = loadFromStorage<RankEntry[]>(RESULTS_KEY, MOCK_RESULTS);
     onUpdate(current);
 
@@ -270,10 +270,33 @@ export class MockDataProvider implements IDataProvider {
     });
 
     saveToStorage(RESULTS_KEY, updatedResults);
-    window.dispatchEvent(new StorageEvent('storage', { key: RESULTS_KEY, newValue: JSON.stringify(updatedResults) }));
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: RESULTS_KEY, newValue: JSON.stringify(updatedResults) })
+    );
+
+    // Also append audit entry
+    const currentLogs = loadFromStorage<EvaluationAuditEntry[]>(AUDIT_LOG_KEY, []);
+    const newLog: EvaluationAuditEntry = {
+      auditId: `audit_${Date.now()}`,
+      teamId,
+      judgeId: scores.judgeId || 'J001',
+      previousDebugMarks: existing?.debugMarks ?? null,
+      newDebugMarks: newDebug,
+      previousCodeMarks: existing?.codeMarks ?? null,
+      newCodeMarks: newCode,
+      predictScore: newPredict,
+      finalScore,
+      timestamp: new Date().toISOString(),
+      note: scores.note,
+    };
+    const updatedLogs = [newLog, ...currentLogs];
+    saveToStorage(AUDIT_LOG_KEY, updatedLogs);
+    window.dispatchEvent(
+      new StorageEvent('storage', { key: AUDIT_LOG_KEY, newValue: JSON.stringify(updatedLogs) })
+    );
   }
 
-  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void): () => void {
+  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, _onError?: (err: Error) => void): () => void {
     const current = loadFromStorage<EvaluationAuditEntry[]>(AUDIT_LOG_KEY, []);
     onUpdate(current);
     return () => {};

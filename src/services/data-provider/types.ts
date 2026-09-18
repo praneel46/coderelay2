@@ -19,7 +19,7 @@ export interface IDataProvider {
   subscribeAuth(onUser: (user: AuthUser | null) => void): () => void;
 
   // Competition State
-  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void): () => void;
+  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void, onError?: (err: Error) => void): () => void;
   startStrike(strikeId: StrikeId): Promise<void>;
   endStrike(strikeId: StrikeId): Promise<void>;
   pauseCompetition(): Promise<void>;
@@ -32,7 +32,7 @@ export interface IDataProvider {
   subscribeTeamSubmissions(teamId: string, onUpdate: (subs: Submission[]) => void): () => void;
 
   // Leaderboard & Evaluation
-  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void): () => void;
+  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void, onError?: (err: Error) => void): () => void;
   updateTeamScores(
     teamId: string,
     scores: {
@@ -43,7 +43,7 @@ export interface IDataProvider {
       note?: string;
     }
   ): Promise<void>;
-  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void): () => void;
+  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, onError?: (err: Error) => void): () => void;
   getTeamEvaluation(teamId: string): {
     predictScore: number;
     debugMarks: number | null;

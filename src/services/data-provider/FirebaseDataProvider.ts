@@ -62,8 +62,8 @@ export class FirebaseDataProvider implements IDataProvider {
   // ------------------------------------------------------------
   // Competition State
   // ------------------------------------------------------------
-  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void): () => void {
-    return subscribeToCompetitionState(onUpdate);
+  subscribeCompetitionState(onUpdate: (state: CompetitionState) => void, onError?: (err: Error) => void): () => void {
+    return subscribeToCompetitionState(onUpdate, onError);
   }
 
   async startStrike(strikeId: StrikeId): Promise<void> {
@@ -115,8 +115,8 @@ export class FirebaseDataProvider implements IDataProvider {
   // ------------------------------------------------------------
   // Leaderboard & Scoring
   // ------------------------------------------------------------
-  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void): () => void {
-    return subscribeToLeaderboard(onUpdate);
+  subscribeLeaderboard(onUpdate: (results: RankEntry[]) => void, onError?: (err: Error) => void): () => void {
+    return subscribeToLeaderboard(onUpdate, onError);
   }
 
   async updateTeamScores(
@@ -170,27 +170,34 @@ export class FirebaseDataProvider implements IDataProvider {
     );
   }
 
-  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void): () => void {
+  subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, onError?: (err: Error) => void): () => void {
     const q = query(collection(db, COLLECTIONS.AUDIT_LOGS), orderBy('timestamp', 'desc'));
-    return onSnapshot(q, (snapshot) => {
-      const logs: EvaluationAuditEntry[] = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data();
-        return {
-          auditId: d.logId || docSnap.id,
-          teamId: d.teamId || '',
-          judgeId: d.judgeId || d.actor || '',
-          previousDebugMarks: d.previousDebugMarks ?? null,
-          newDebugMarks: d.newDebugMarks ?? null,
-          previousCodeMarks: d.previousCodeMarks ?? null,
-          newCodeMarks: d.newCodeMarks ?? null,
-          predictScore: d.predictScore ?? 0,
-          finalScore: d.finalScore ?? 0,
-          timestamp: d.timestamp || new Date().toISOString(),
-          note: d.note,
-        };
-      });
-      onUpdate(logs);
-    });
+    return onSnapshot(
+      q,
+      (snapshot) => {
+        const logs: EvaluationAuditEntry[] = snapshot.docs.map((docSnap) => {
+          const d = docSnap.data();
+          return {
+            auditId: d.logId || docSnap.id,
+            teamId: d.teamId || '',
+            judgeId: d.judgeId || d.actor || '',
+            previousDebugMarks: d.previousDebugMarks ?? null,
+            newDebugMarks: d.newDebugMarks ?? null,
+            previousCodeMarks: d.previousCodeMarks ?? null,
+            newCodeMarks: d.newCodeMarks ?? null,
+            predictScore: d.predictScore ?? 0,
+            finalScore: d.finalScore ?? 0,
+            timestamp: d.timestamp || new Date().toISOString(),
+            note: d.note,
+          };
+        });
+        onUpdate(logs);
+      },
+      (err) => {
+        if (onError) onError(err);
+        else console.warn('[Firestore] Audit log subscription notice:', err.message);
+      }
+    );
   }
 
   getTeamEvaluation(teamId: string) {

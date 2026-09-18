@@ -20,6 +20,7 @@ import type { EvaluationAuditEntry } from '../types/judge';
 import { MOCK_INITIAL_STATE } from '../data/mock-competition-state';
 import { MOCK_RESULTS } from '../data/mock-results';
 import { dataProvider } from '../services/data-provider';
+import { useAuth } from './AuthContext';
 
 // ----------------------------------------------------------------
 // Context value
@@ -125,32 +126,55 @@ export function rankTeamsWithTieBreak(entries: RankEntry[]): RankEntry[] {
 // Provider
 // ----------------------------------------------------------------
 export function CompetitionProvider({ children }: { children: ReactNode }) {
+  const { user, isAuthenticated } = useAuth();
   const [competitionState, setCompetitionState] = useState<CompetitionState>(MOCK_INITIAL_STATE);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [carryForward, setCarryForward] = useState<CarryForwardState>({ debugQuestionIds: [] });
   const [results, setResults] = useState<RankEntry[]>(() => rankTeamsWithTieBreak(MOCK_RESULTS));
   const [auditLogs, setAuditLogs] = useState<EvaluationAuditEntry[]>([]);
 
-  // Real-time subscriptions through dataProvider
+  // Real-time subscriptions through dataProvider (only active when authenticated)
   useEffect(() => {
-    const unsubComp = dataProvider.subscribeCompetitionState((state) => {
-      setCompetitionState(state);
-    });
+    if (!isAuthenticated) {
+      return;
+    }
 
-    const unsubLeaderboard = dataProvider.subscribeLeaderboard((newResults) => {
-      setResults(rankTeamsWithTieBreak(newResults));
-    });
+    const unsubComp = dataProvider.subscribeCompetitionState(
+      (state) => {
+        setCompetitionState(state);
+      },
+      (err) => {
+        console.warn('[CompetitionContext] Competition state subscription notice:', err.message);
+      }
+    );
 
-    const unsubAudit = dataProvider.subscribeAuditLogs((logs) => {
-      setAuditLogs(logs);
-    });
+    const unsubLeaderboard = dataProvider.subscribeLeaderboard(
+      (newResults) => {
+        setResults(rankTeamsWithTieBreak(newResults));
+      },
+      (err) => {
+        console.warn('[CompetitionContext] Leaderboard subscription notice:', err.message);
+      }
+    );
+
+    let unsubAudit: (() => void) | undefined;
+    if (user?.role === 'organizer' || user?.isOrganizer) {
+      unsubAudit = dataProvider.subscribeAuditLogs(
+        (logs) => {
+          setAuditLogs(logs);
+        },
+        (err) => {
+          console.warn('[CompetitionContext] Audit logs subscription notice:', err.message);
+        }
+      );
+    }
 
     return () => {
       unsubComp();
       unsubLeaderboard();
-      unsubAudit();
+      if (unsubAudit) unsubAudit();
     };
-  }, []);
+  }, [isAuthenticated, user?.role, user?.isOrganizer]);
 
   // Compute carry-forward when strike2 completes
   useEffect(() => {
