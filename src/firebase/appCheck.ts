@@ -1,44 +1,70 @@
 // ============================================================
 // VIGYANTRA 2026 — CODE RELAY
 // Firebase App Check Configuration
-// Protects backend resources from abuse without replacing auth.
+// Protects backend resources using reCAPTCHA Enterprise.
 // ============================================================
 
-import { initializeAppCheck, ReCaptchaV3Provider, CustomProvider } from 'firebase/app-check';
-import app from './config';
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+  CustomProvider,
+  type AppCheck,
+} from 'firebase/app-check';
+import { getApps, getApp, type FirebaseApp } from 'firebase/app';
 
-export function initAppCheck(): void {
-  // Only initialize if running in browser
-  if (typeof window === 'undefined') return;
+let appCheckInstance: AppCheck | null = null;
+
+/**
+ * Initialize Firebase App Check with reCAPTCHA Enterprise.
+ * Ensures App Check is initialized exactly once before backend services are used.
+ */
+export function initAppCheck(firebaseApp?: FirebaseApp): AppCheck | null {
+  // Only initialize in browser environment
+  if (typeof window === 'undefined') return null;
+
+  // Guarantee single initialization
+  if (appCheckInstance) {
+    return appCheckInstance;
+  }
+
+  const targetApp = firebaseApp || (getApps().length ? getApp() : undefined);
+  if (!targetApp) return null;
 
   const recaptchaSiteKey = import.meta.env.VITE_FIREBASE_RECAPTCHA_SITE_KEY;
-  const isDebug = import.meta.env.DEV || !!import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
+  const isDev = import.meta.env.DEV;
 
-  if (isDebug) {
-    // In development mode, set self-debug token for emulator / local testing
-    // @ts-expect-error self debug token property
-    self.FIREBASE_APPCHECK_DEBUG_TOKEN = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN || true;
+  // Development debug token mechanism: only active in local development
+  if (isDev) {
+    const debugToken = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
+    if (debugToken) {
+      // @ts-expect-error self debug token property for Firebase App Check
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+    }
   }
 
   try {
     if (recaptchaSiteKey) {
-      initializeAppCheck(app, {
-        provider: new ReCaptchaV3Provider(recaptchaSiteKey),
+      appCheckInstance = initializeAppCheck(targetApp, {
+        provider: new ReCaptchaEnterpriseProvider(recaptchaSiteKey),
         isTokenAutoRefreshEnabled: true,
       });
-    } else if (isDebug) {
-      initializeAppCheck(app, {
+    } else if (isDev) {
+      // Offline / local development fallback when no site key is provided
+      appCheckInstance = initializeAppCheck(targetApp, {
         provider: new CustomProvider({
-          getToken: () => Promise.resolve({
-            token: 'mock-debug-app-check-token',
-            expireTimeMillis: Date.now() + 3600 * 1000,
-          }),
+          getToken: () =>
+            Promise.resolve({
+              token: 'mock-debug-app-check-token',
+              expireTimeMillis: Date.now() + 3600 * 1000,
+            }),
         }),
         isTokenAutoRefreshEnabled: true,
       });
     }
   } catch (err) {
-    // Graceful fallback during offline development
+    // Graceful fallback during offline development or testing
     console.info('[AppCheck] Initialized with development fallback.', err);
   }
+
+  return appCheckInstance;
 }
