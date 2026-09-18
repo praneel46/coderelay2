@@ -30,7 +30,8 @@ export function initAppCheck(firebaseApp?: FirebaseApp): AppCheck | null {
   const targetApp = firebaseApp || (getApps().length ? getApp() : undefined);
   if (!targetApp) return null;
 
-  const recaptchaSiteKey = import.meta.env.VITE_FIREBASE_RECAPTCHA_SITE_KEY;
+  const rawKey = import.meta.env.VITE_FIREBASE_RECAPTCHA_SITE_KEY;
+  const recaptchaSiteKey = typeof rawKey === 'string' ? rawKey.trim() : '';
   const isDev = import.meta.env.DEV;
 
   // Development debug token mechanism: only active in local development
