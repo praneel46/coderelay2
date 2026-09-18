@@ -63,20 +63,28 @@ export async function signInOrganizerWithGoogle(): Promise<AuthUser> {
         isOrganizer: true,
       };
     }
-
-    // Also check email whitelist collection if configured
-    if (firebaseUser.email) {
-      const emailDocRef = doc(db, 'authorized_organizer_emails', firebaseUser.email.toLowerCase());
-      const emailDoc = await getDoc(emailDocRef);
-      if (emailDoc.exists() && emailDoc.data().authorized === true) {
-        return {
-          role: 'organizer',
-          isOrganizer: true,
-        };
-      }
-    }
   } catch (err) {
-    console.warn('[FirebaseAuth] Error verifying organizer authorization doc:', err);
+    console.warn('[FirebaseAuth] Error verifying organizers doc:', err);
+  }
+
+  // 3. Check authorized_organizer_emails collection in Firestore
+  if (firebaseUser.email) {
+    try {
+      const normalizedEmail = firebaseUser.email.trim().toLowerCase();
+      const emailDocRef = doc(db, 'authorized_organizer_emails', normalizedEmail);
+      const emailDoc = await getDoc(emailDocRef);
+      if (emailDoc.exists()) {
+        const data = emailDoc.data();
+        if (data.authorized === true || data.authorized === 'true') {
+          return {
+            role: 'organizer',
+            isOrganizer: true,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn('[FirebaseAuth] Error verifying authorized_organizer_emails doc:', err);
+    }
   }
 
   // If role check failed: unauthorized Google account -> ACCESS DENIED
@@ -239,7 +247,33 @@ export function subscribeToFirebaseAuthState(
         return;
       }
 
-      const userEmail = (user.email || '').toLowerCase();
+      // Check organizers collection (by UID) for session restoration
+      try {
+        const orgDoc = await getDoc(doc(db, 'organizers', user.uid));
+        if (orgDoc.exists() && orgDoc.data()?.authorized === true) {
+          onUserChanged({ role: 'organizer', isOrganizer: true });
+          return;
+        }
+      } catch (_) {
+        // Fall through to email whitelist check
+      }
+
+      // Check authorized_organizer_emails collection (by normalized email)
+      const userEmail = (user.email || '').trim().toLowerCase();
+      if (userEmail) {
+        try {
+          const emailDoc = await getDoc(doc(db, 'authorized_organizer_emails', userEmail));
+          if (emailDoc.exists()) {
+            const data = emailDoc.data();
+            if (data?.authorized === true || data?.authorized === 'true') {
+              onUserChanged({ role: 'organizer', isOrganizer: true });
+              return;
+            }
+          }
+        } catch (_) {
+          // Fall through to judge/participant checks
+        }
+      }
       const judgeAccount = JUDGE_ACCOUNTS[userEmail];
 
       if (role === 'judge' || judgeAccount) {

@@ -13,7 +13,10 @@ service cloud.firestore {
       return isAuthenticated() && (
         request.auth.token.role == 'organizer' ||
         request.auth.token.isOrganizer == true ||
-        exists(/databases/$(database)/documents/organizers/$(request.auth.uid))
+        exists(/databases/$(database)/documents/organizers/$(request.auth.uid)) ||
+        (request.auth.token.email != null &&
+         exists(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.email.lower())) &&
+         get(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.email.lower())).data.authorized == true)
       );
     }
 
@@ -169,6 +172,16 @@ service cloud.firestore {
       allow read: if isOrganizer();
       allow create: if isOrganizer() || isJudge();
       allow update, delete: if false; // Immutable audit logs
+    }
+
+    // ------------------------------------------------------------
+    // Authorized Organizer Emails Whitelist (/authorized_organizer_emails/{email})
+    // Read-only for authorization checks: authenticated users can only read
+    // their own email document.
+    // ------------------------------------------------------------
+    match /authorized_organizer_emails/{email} {
+      allow read: if isAuthenticated() && request.auth.token.email != null && request.auth.token.email.lower() == email.lower();
+      allow write: if false;
     }
 
     // ------------------------------------------------------------
