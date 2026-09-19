@@ -33,3 +33,5 @@ service-account*.json
 *service-account*.json
 *credentials*.json
 scripts/secrets/*
+*.csv
+temp-*

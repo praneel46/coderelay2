@@ -183,32 +183,61 @@ if (validationErrors.length > 0) {
   process.exit(1);
 }
 
-// Initialize Firebase Admin SDK if not dry-run
+// Initialize Firebase Admin SDK or Firebase CLI credentials if not dry-run
 let auth;
 let db;
+let useCliAuth = false;
+let cliToken = null;
+const cliProjectId = 'coderelay-87c77';
 
 if (!isDryRun) {
-  if (!fs.existsSync(keyPath)) {
-    console.error(`\x1b[31m[ERROR] Service account key not found at: ${keyPath}\x1b[0m`);
-    console.error('\nTo obtain your Firebase service account key:');
-    console.error('1. Open Firebase Console -> Project Settings -> Service Accounts');
-    console.error('2. Click "Generate new private key"');
-    console.error(`3. Save it locally as "${path.resolve(keyPath)}" (it is in .gitignore)`);
-    console.error('4. Re-run this script: node scripts/provision-teams.mjs\n');
-    process.exit(1);
-  }
+  if (fs.existsSync(keyPath)) {
+    try {
+      const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+      auth = admin.auth();
+      db = admin.firestore();
+      console.log(`\x1b[32m✓ Connected to Firebase Project via Service Account: ${serviceAccount.project_id}\x1b[0m\n`);
+    } catch (err) {
+      console.error(`\x1b[31m[ERROR] Failed to initialize Firebase Admin SDK: ${err.message}\x1b[0m`);
+      process.exit(1);
+    }
+  } else {
+    // Check for Firebase CLI login credentials as seamless organizer fallback
+    const possibleConfigPaths = [
+      path.join(process.env.USERPROFILE || '', '.config', 'configstore', 'firebase-tools.json'),
+      path.join(process.env.HOME || '', '.config', 'configstore', 'firebase-tools.json'),
+      path.join(process.env.APPDATA || '', 'configstore', 'firebase-tools.json'),
+    ];
+    let foundConfig = null;
+    for (const p of possibleConfigPaths) {
+      if (p && fs.existsSync(p)) {
+        try {
+          const c = JSON.parse(fs.readFileSync(p, 'utf-8'));
+          if (c.tokens?.access_token) {
+            foundConfig = c;
+            break;
+          }
+        } catch (_) {}
+      }
+    }
 
-  try {
-    const serviceAccount = JSON.parse(fs.readFileSync(keyPath, 'utf-8'));
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-    auth = admin.auth();
-    db = admin.firestore();
-    console.log(`\x1b[32m✓ Connected to Firebase Project: ${serviceAccount.project_id}\x1b[0m\n`);
-  } catch (err) {
-    console.error(`\x1b[31m[ERROR] Failed to initialize Firebase Admin SDK: ${err.message}\x1b[0m`);
-    process.exit(1);
+    if (foundConfig) {
+      cliToken = foundConfig.tokens.access_token;
+      useCliAuth = true;
+      console.log(`\x1b[32m✓ Authenticated via Firebase CLI credentials (${foundConfig.user?.email || 'Logged In Organizer'})\x1b[0m`);
+      console.log(`\x1b[32m✓ Targeting Firebase Project: ${cliProjectId}\x1b[0m\n`);
+    } else {
+      console.error(`\x1b[31m[ERROR] Service account key not found at: ${keyPath}\x1b[0m`);
+      console.error('\nTo obtain your Firebase service account key:');
+      console.error('1. Open Firebase Console -> Project Settings -> Service Accounts');
+      console.error('2. Click "Generate new private key"');
+      console.error(`3. Save it locally as "${path.resolve(keyPath)}" (it is in .gitignore)`);
+      console.error('Or log in via Firebase CLI: npx firebase login\n');
+      process.exit(1);
+    }
   }
 }
 
@@ -243,59 +272,147 @@ for (const team of teamsList) {
   let errorMsg = null;
 
   try {
-    // 1. Check or Create Auth Account
-    let userRecord;
-    try {
-      userRecord = await auth.getUserByEmail(email);
-      // Update existing account password & displayName
-      await auth.updateUser(userRecord.uid, {
-        password,
-        displayName,
-      });
-      authStatus = 'UPDATED';
-    } catch (authErr) {
-      if (authErr.code === 'auth/user-not-found') {
-        userRecord = await auth.createUser({
-          uid: teamId.toLowerCase(),
+    if (useCliAuth) {
+      // 1. Create or update user via Identity Toolkit API
+      const createRes = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${cliProjectId}/accounts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cliToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localId: teamId.toLowerCase(),
           email,
           password,
           displayName,
           emailVerified: true,
-        });
+        }),
+      }).then(r => r.json());
+
+      if (createRes.localId) {
         authStatus = 'CREATED';
+      } else if (createRes.error?.message?.includes('EMAIL_EXISTS') || createRes.error?.message?.includes('DUPLICATE_LOCAL_ID')) {
+        const updateRes = await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${cliProjectId}/accounts:update`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + cliToken,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            localId: teamId.toLowerCase(),
+            password,
+            displayName,
+          }),
+        }).then(r => r.json());
+
+        if (updateRes.localId || updateRes.email) {
+          authStatus = 'UPDATED';
+        } else {
+          throw new Error(updateRes.error?.message || 'Failed to update Auth account');
+        }
       } else {
-        throw authErr;
+        throw new Error(createRes.error?.message || 'Failed to create Auth account');
       }
+
+      // 2. Set Custom Claims for Identity
+      await fetch(`https://identitytoolkit.googleapis.com/v1/projects/${cliProjectId}/accounts:update`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + cliToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          localId: teamId.toLowerCase(),
+          customAttributes: JSON.stringify({ role: 'participant', teamId }),
+        }),
+      });
+
+      // 3. Write Public Team Data to Firestore /teams/{teamId}
+      // CRITICAL: NEVER WRITE accessCode TO FIRESTORE!
+      const firestoreBody = {
+        fields: {
+          teamId: { stringValue: teamId },
+          teamName: { stringValue: displayName },
+          status: { stringValue: 'READY' },
+          round2Eligible: { booleanValue: true },
+          member1: { mapValue: { fields: { name: { stringValue: member1 }, role: { stringValue: 'M1' } } } },
+          member2: { mapValue: { fields: { name: { stringValue: member2 }, role: { stringValue: 'M2' } } } },
+          member3: { mapValue: { fields: { name: { stringValue: member3 }, role: { stringValue: 'M3' } } } },
+          updatedAt: { stringValue: new Date().toISOString() },
+          createdAt: { stringValue: new Date().toISOString() },
+        },
+      };
+
+      const firestoreRes = await fetch(`https://firestore.googleapis.com/v1/projects/${cliProjectId}/databases/(default)/documents/teams/${teamId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': 'Bearer ' + cliToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(firestoreBody),
+      }).then(r => r.json());
+
+      if (firestoreRes.name) {
+        firestoreStatus = 'READY';
+      } else {
+        throw new Error(firestoreRes.error?.message || 'Failed to write Firestore team document');
+      }
+
+    } else {
+      // 1. Check or Create Auth Account via Admin SDK
+      let userRecord;
+      try {
+        userRecord = await auth.getUserByEmail(email);
+        // Update existing account password & displayName
+        await auth.updateUser(userRecord.uid, {
+          password,
+          displayName,
+        });
+        authStatus = 'UPDATED';
+      } catch (authErr) {
+        if (authErr.code === 'auth/user-not-found') {
+          userRecord = await auth.createUser({
+            uid: teamId.toLowerCase(),
+            email,
+            password,
+            displayName,
+            emailVerified: true,
+          });
+          authStatus = 'CREATED';
+        } else {
+          throw authErr;
+        }
+      }
+
+      // 2. Set Custom Claims for Identity
+      await auth.setCustomUserClaims(userRecord.uid, {
+        role: 'participant',
+        teamId,
+      });
+
+      // 3. Write Public Team Data to Firestore /teams/{teamId}
+      // CRITICAL: NEVER WRITE accessCode TO FIRESTORE!
+      const teamDocRef = db.collection('teams').doc(teamId);
+      const existingDoc = await teamDocRef.get();
+
+      const payload = {
+        teamId,
+        teamName: displayName,
+        member1: { name: member1, role: 'M1' },
+        member2: { name: member2, role: 'M2' },
+        member3: { name: member3, role: 'M3' },
+        status: 'READY',
+        round2Eligible: true,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (!existingDoc.exists) {
+        payload.createdAt = new Date().toISOString();
+      }
+
+      await teamDocRef.set(payload, { merge: true });
+      firestoreStatus = existingDoc.exists ? 'MERGED' : 'CREATED';
     }
-
-    // 2. Set Custom Claims for Identity
-    await auth.setCustomUserClaims(userRecord.uid, {
-      role: 'participant',
-      teamId,
-    });
-
-    // 3. Write Public Team Data to Firestore /teams/{teamId}
-    // CRITICAL: NEVER WRITE accessCode TO FIRESTORE!
-    const teamDocRef = db.collection('teams').doc(teamId);
-    const existingDoc = await teamDocRef.get();
-
-    const payload = {
-      teamId,
-      teamName: displayName,
-      member1: { name: member1, role: 'M1' },
-      member2: { name: member2, role: 'M2' },
-      member3: { name: member3, role: 'M3' },
-      status: 'READY',
-      round2Eligible: true,
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (!existingDoc.exists) {
-      payload.createdAt = new Date().toISOString();
-    }
-
-    await teamDocRef.set(payload, { merge: true });
-    firestoreStatus = existingDoc.exists ? 'MERGED' : 'CREATED';
 
     results.push({
       teamId,
