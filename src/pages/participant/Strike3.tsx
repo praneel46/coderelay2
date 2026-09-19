@@ -9,6 +9,8 @@ import { MOCK_STRIKE3_QUESTIONS, MOCK_STRIKE2_QUESTIONS } from '../../data/mock-
 import CodeQuestion from '../../components/competition/CodeQuestion';
 import DebugQuestion from '../../components/competition/DebugQuestion';
 import StrikeCountdownOverlay from '../../components/competition/StrikeCountdownOverlay';
+import { useAntiCheat } from '../../hooks/useAntiCheat';
+import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 
 function TimerBar({ endsAt, totalSeconds, onExpired }: { endsAt?: string | null; totalSeconds: number; onExpired: () => void }) {
   const { displayTime, timerState, progress } = useTimer(endsAt, totalSeconds, onExpired);
@@ -77,6 +79,22 @@ export default function Strike3() {
 
   const codeSubmittedIds = new Set(codeQuestions.filter((q) => getSubmission(q.id)?.status === 'submitted').map((q) => q.id));
 
+  const handleAutoSubmit = useCallback(() => {
+    handleTimerExpired();
+  }, [handleTimerExpired]);
+
+  const {
+    warningCount,
+    activeViolation,
+    isLockedOut,
+    dismissModal,
+  } = useAntiCheat({
+    enabled: phase === 'active' && currentStrikeId === 'strike3',
+    teamId: user?.team?.teamId || '',
+    strikeId: 'strike3',
+    onAutoSubmit: handleAutoSubmit,
+  });
+
   const [showCountdown, setShowCountdown] = useState(() => {
     if (!activeStrike?.startedAt) return false;
     const diff = (Date.now() - new Date(activeStrike.startedAt).getTime()) / 1000;
@@ -85,6 +103,14 @@ export default function Strike3() {
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
+      {/* Anti-Cheat Warning Modal */}
+      <AntiCheatModal
+        violation={activeViolation}
+        warningCount={warningCount}
+        isLockedOut={isLockedOut}
+        onDismiss={dismissModal}
+      />
+
       {/* 5-second countdown banner on strike start */}
       {showCountdown && (
         <StrikeCountdownOverlay

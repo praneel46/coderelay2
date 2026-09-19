@@ -3,7 +3,7 @@
 // Firestore Schema Definitions & Types
 // ============================================================
 
-import type { StrikeId, QuestionType } from '../types/competition';
+import type { StrikeId, QuestionType, TeamStatus } from '../types/competition';
 import type { EvaluationStatus, StrikeTiming } from '../types/results';
 
 export interface FirestoreTeamDoc {
@@ -12,7 +12,8 @@ export interface FirestoreTeamDoc {
   member1: { name: string; email?: string; role: 'M1' };
   member2: { name: string; email?: string; role: 'M2' };
   member3: { name: string; email?: string; role: 'M3' };
-  status: 'active' | 'disqualified' | 'withdrawn';
+  status: TeamStatus;
+  round2Eligible?: boolean;
   createdAt: string; // ISO
   updatedAt: string; // ISO
   // NOTE: accessCode is NOT stored in the public team document
@@ -70,7 +71,12 @@ export interface FirestoreSubmissionDoc {
   round: 'round2';
   strikeId: StrikeId;
   answer: string;
-  submittedAt: string; // Authoritative server timestamp
+  submittedAt: string; // Authoritative server timestamp (required by security rules)
+  serverReceivedAt?: unknown; // Server arrival timestamp
+  clientSubmittedAt?: string; // Client submit trigger timestamp
+  officialDeadline?: string | null; // Official deadline timestamp
+  withinOfficialDeadline?: boolean; // True if submitted within 5m/15m/20m
+  acceptedViaNetworkBuffer?: boolean; // True if accepted during 15s arrival buffer
   status: 'submitted' | 'locked';
   isCarriedForward?: boolean;
   lockedAt?: string;

@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Trophy, CheckCircle2, LogOut } from 'lucide-react';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from '../../firebase/config';
+import { COLLECTIONS } from '../../firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useCompetition } from '../../context/CompetitionContext';
 import { MOCK_STRIKE1_QUESTIONS, MOCK_STRIKE2_QUESTIONS, MOCK_STRIKE3_QUESTIONS } from '../../data/mock-questions';
@@ -12,6 +15,20 @@ export default function RoundComplete() {
   const { submissions } = useCompetition();
 
   const teamId = user?.team?.teamId ?? '';
+
+  useEffect(() => {
+    if (teamId) {
+      const teamRef = doc(db, COLLECTIONS.TEAMS, teamId);
+      updateDoc(teamRef, {
+        status: 'COMPLETED',
+        completedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }).catch((err) => {
+        console.warn('Could not auto-transition team status to COMPLETED:', err);
+      });
+    }
+  }, [teamId]);
+
   const teamSubmissions = submissions.filter((s) => s.teamId === teamId);
 
   const s1Count = MOCK_STRIKE1_QUESTIONS.filter((q) => teamSubmissions.some((s) => s.questionId === q.id)).length;

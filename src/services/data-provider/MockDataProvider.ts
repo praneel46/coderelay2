@@ -239,6 +239,8 @@ export class MockDataProvider implements IDataProvider {
       predictScore?: number;
       judgeId?: string;
       note?: string;
+      timing?: StrikeTiming;
+      teamName?: string;
     }
   ): Promise<void> {
     const currentResults = loadFromStorage<RankEntry[]>(RESULTS_KEY, MOCK_RESULTS);

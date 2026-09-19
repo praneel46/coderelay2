@@ -26,14 +26,22 @@ import {
   COLLECTIONS,
 } from '../../firebase/firestore';
 import {
-  callStartStrike,
-  callEndStrike,
-  callPauseCompetition,
-  callResumeCompetition,
-  callEmergencyLock,
-} from '../../firebase/functions';
-import { doc, setDoc, collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+  doc,
+  setDoc,
+  getDoc,
+  addDoc,
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'firebase/firestore';
+import { db, auth } from '../../firebase/config';
+
+const STRIKE_DURATIONS: Record<StrikeId, number> = {
+  strike1: 5 * 60,   // 5 minutes (300s)
+  strike2: 15 * 60,  // 15 minutes (900s)
+  strike3: 20 * 60,  // 20 minutes (1200s)
+};
 
 export class FirebaseDataProvider implements IDataProvider {
   // ------------------------------------------------------------
@@ -67,27 +75,172 @@ export class FirebaseDataProvider implements IDataProvider {
   }
 
   async startStrike(strikeId: StrikeId): Promise<void> {
-    await callStartStrike(strikeId);
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const compSnap = await getDoc(compRef);
+    const currentData = compSnap.exists() ? compSnap.data() : null;
+
+    // Transition validation
+    if (strikeId === 'strike2') {
+      const completed: string[] = currentData?.completedStrikes || [];
+      if (!completed.includes('strike1')) {
+        throw new Error('Cannot start Strike 2 before Strike 1 is completed.');
+      }
+    }
+    if (strikeId === 'strike3') {
+      const completed: string[] = currentData?.completedStrikes || [];
+      if (!completed.includes('strike2')) {
+        throw new Error('Cannot start Strike 3 before Strike 2 is completed.');
+      }
+    }
+
+    const durationSeconds = STRIKE_DURATIONS[strikeId] || 300;
+    const now = new Date();
+    const startTime = now.toISOString();
+    const endTime = new Date(now.getTime() + durationSeconds * 1000).toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    await setDoc(
+      compRef,
+      {
+        roundId: 'round2',
+        currentStrikeId: strikeId,
+        phase: 'active',
+        status: strikeId.toUpperCase(),
+        startTime,
+        endTime,
+        durationSeconds,
+        gracePeriodSeconds: 15,
+        globalLock: false,
+        updatedAt: startTime,
+        updatedBy: actorUid,
+      },
+      { merge: true }
+    );
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: startTime,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'START_STRIKE',
+      target: strikeId,
+      metadata: { startTime, endTime, durationSeconds },
+    });
   }
 
   async endStrike(strikeId: StrikeId): Promise<void> {
-    await callEndStrike(strikeId);
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const compSnap = await getDoc(compRef);
+    const currentData = compSnap.exists() ? compSnap.data() : null;
+
+    const completedStrikes: StrikeId[] = currentData?.completedStrikes || [];
+    if (strikeId && !completedStrikes.includes(strikeId)) {
+      completedStrikes.push(strikeId);
+    }
+
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    await setDoc(
+      compRef,
+      {
+        phase: 'complete',
+        currentStrikeId: null,
+        completedStrikes,
+        updatedAt: nowIso,
+        updatedBy: actorUid,
+      },
+      { merge: true }
+    );
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: nowIso,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'END_STRIKE',
+      target: strikeId,
+    });
   }
 
   async pauseCompetition(): Promise<void> {
-    await callPauseCompetition();
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    await setDoc(
+      compRef,
+      {
+        globalLock: true,
+        updatedAt: nowIso,
+        updatedBy: actorUid,
+      },
+      { merge: true }
+    );
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: nowIso,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'PAUSE_COMPETITION',
+    });
   }
 
   async resumeCompetition(): Promise<void> {
-    await callResumeCompetition();
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    await setDoc(
+      compRef,
+      {
+        globalLock: false,
+        updatedAt: nowIso,
+        updatedBy: actorUid,
+      },
+      { merge: true }
+    );
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: nowIso,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'RESUME_COMPETITION',
+    });
   }
 
   async emergencyLock(): Promise<void> {
-    await callEmergencyLock();
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    await setDoc(
+      compRef,
+      {
+        globalLock: true,
+        phase: 'complete',
+        updatedAt: nowIso,
+        updatedBy: actorUid,
+      },
+      { merge: true }
+    );
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: nowIso,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'EMERGENCY_LOCK',
+    });
   }
 
   async resetRound(): Promise<void> {
     const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
     await setDoc(compRef, {
       roundId: 'round2',
       currentStrikeId: null,
@@ -97,7 +250,16 @@ export class FirebaseDataProvider implements IDataProvider {
       endTime: null,
       completedStrikes: [],
       globalLock: false,
-      updatedAt: new Date().toISOString(),
+      updatedAt: nowIso,
+      updatedBy: actorUid,
+    });
+
+    await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      logId: `log_${Date.now()}`,
+      timestamp: nowIso,
+      actor: actorUid,
+      role: 'organizer',
+      action: 'RESET_ROUND',
     });
   }
 
@@ -127,6 +289,8 @@ export class FirebaseDataProvider implements IDataProvider {
       predictScore?: number;
       judgeId?: string;
       note?: string;
+      timing?: StrikeTiming;
+      teamName?: string;
     }
   ): Promise<void> {
     const evalId = `eval_${teamId}`;
@@ -158,12 +322,14 @@ export class FirebaseDataProvider implements IDataProvider {
       resultRef,
       {
         teamId,
+        ...(scores.teamName ? { teamName: scores.teamName } : {}),
         predictScore: predict,
         debugMarks: scores.debugMarks,
         codeMarks: scores.codeMarks,
         debugCodeTotal: debug + code,
         finalScore: total,
         evaluationStatus: scores.debugMarks !== null && scores.codeMarks !== null ? 'evaluated' : 'in_progress',
+        ...(scores.timing ? { timing: scores.timing } : {}),
         updatedAt: new Date().toISOString(),
       },
       { merge: true }

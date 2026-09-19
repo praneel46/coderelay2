@@ -97,20 +97,41 @@ export function subscribeToLeaderboard(
   return onSnapshot(
     resultsQuery,
     (snapshot) => {
-      const entries: RankEntry[] = snapshot.docs.map((docSnap, index) => {
+      const rawEntries = snapshot.docs.map((docSnap) => {
         const d = docSnap.data() as FirestoreResultDoc;
         return {
-          rank: index + 1,
           teamId: d.teamId,
-          teamName: d.teamName,
-          predictScore: d.predictScore,
-          debugMarks: d.debugMarks,
-          codeMarks: d.codeMarks,
-          debugCodeTotal: d.debugCodeTotal,
-          finalScore: d.finalScore,
-          evaluationStatus: d.evaluationStatus,
-          timing: d.timing,
-          tieBreakerApplied: d.tieBreakerApplied,
+          teamName: d.teamName || `Team ${d.teamId}`,
+          predictScore: d.predictScore ?? 0,
+          debugMarks: d.debugMarks ?? null,
+          codeMarks: d.codeMarks ?? null,
+          debugCodeTotal: d.debugCodeTotal ?? ((d.debugMarks ?? 0) + (d.codeMarks ?? 0)),
+          finalScore: d.finalScore ?? 0,
+          evaluationStatus: d.evaluationStatus || 'pending',
+          timing: d.timing || {},
+          tieBreakerApplied: d.tieBreakerApplied || false,
+        };
+      });
+
+      // Strict tie-breaker sorting:
+      // 1. Highest finalScore wins
+      // 2. Lowest totalElapsedSeconds wins tie-break (time NEVER deducts score)
+      rawEntries.sort((a, b) => {
+        if (b.finalScore !== a.finalScore) {
+          return b.finalScore - a.finalScore;
+        }
+        const timeA = a.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
+        const timeB = b.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
+        return timeA - timeB;
+      });
+
+      const entries: RankEntry[] = rawEntries.map((entry, index, arr) => {
+        const isTiedWithPrev = index > 0 && arr[index - 1].finalScore === entry.finalScore;
+        const isTiedWithNext = index < arr.length - 1 && arr[index + 1].finalScore === entry.finalScore;
+        return {
+          ...entry,
+          rank: index + 1,
+          tieBreakerApplied: isTiedWithPrev || isTiedWithNext,
         };
       });
       onUpdate(entries);
@@ -131,6 +152,37 @@ export async function saveSubmissionToFirestore(
   const submissionId = `${submission.teamId}_${submission.questionId}`;
   const subRef = doc(db, COLLECTIONS.SUBMISSIONS, submissionId);
 
+  // Read current competition state to compute timing audit metadata
+  let officialDeadline: string | null = null;
+  let withinOfficialDeadline = true;
+  let acceptedViaNetworkBuffer = false;
+
+  try {
+    const compSnap = await getDoc(doc(db, COLLECTIONS.COMPETITION, 'round2'));
+    if (compSnap.exists()) {
+      const compData = compSnap.data();
+      let startTimeMs = 0;
+      if (compData.startTime?.toDate) {
+        startTimeMs = compData.startTime.toDate().getTime();
+      } else if (compData.startTime) {
+        startTimeMs = new Date(compData.startTime).getTime();
+      }
+      const durationSecs =
+        compData.durationSeconds ||
+        (submission.strikeId === 'strike1' ? 300 : submission.strikeId === 'strike2' ? 900 : 1200);
+
+      if (startTimeMs > 0) {
+        const deadlineMs = startTimeMs + durationSecs * 1000;
+        officialDeadline = new Date(deadlineMs).toISOString();
+        const now = Date.now();
+        withinOfficialDeadline = now <= deadlineMs;
+        acceptedViaNetworkBuffer = !withinOfficialDeadline;
+      }
+    }
+  } catch (err) {
+    console.warn('[Firestore] Could not calculate deadline metadata:', err);
+  }
+
   const payload: Omit<FirestoreSubmissionDoc, 'submittedAt'> & { submittedAt: unknown } = {
     submissionId,
     teamId: submission.teamId,
@@ -138,7 +190,12 @@ export async function saveSubmissionToFirestore(
     round: 'round2',
     strikeId: submission.strikeId,
     answer: submission.answer,
-    submittedAt: serverTimestamp(), // Authoritative server timestamp
+    submittedAt: serverTimestamp(), // Authoritative server timestamp (required by security rules)
+    serverReceivedAt: serverTimestamp(),
+    clientSubmittedAt: new Date().toISOString(),
+    officialDeadline,
+    withinOfficialDeadline,
+    acceptedViaNetworkBuffer,
     status: 'submitted',
     isCarriedForward: submission.isCarriedForward || false,
   };

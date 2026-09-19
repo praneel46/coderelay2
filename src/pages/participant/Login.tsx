@@ -144,7 +144,7 @@ export default function ParticipantLogin() {
                   setTeamId(e.target.value.toUpperCase());
                   setError(null);
                 }}
-                placeholder="e.g. CRL-0000"
+                placeholder="e.g. CRL-0001"
                 autoComplete="username"
                 autoCapitalize="characters"
                 spellCheck={false}
@@ -215,19 +215,6 @@ export default function ParticipantLogin() {
               )}
             </button>
           </form>
-        </motion.div>
-
-        {/* ── Credentials hint ── */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.55, duration: 0.5 }}
-          className="mt-5 text-center"
-        >
-          <p className="text-slate-600 text-xs font-mono tracking-wider">
-            Mock credentials:&nbsp;
-            <span className="text-slate-400 font-semibold">Team ID: CRL-0000 | Code: MOCK-PASS</span>
-          </p>
         </motion.div>
 
         {/* ── Footer ── */}

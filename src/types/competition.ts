@@ -12,13 +12,26 @@ export interface Member {
   email?: string;
 }
 
+export type TeamStatus =
+  | 'NOT_QUALIFIED'
+  | 'QUALIFIED_FOR_ROUND_2'
+  | 'PROVISIONING'
+  | 'READY'
+  | 'ACTIVE'
+  | 'COMPLETED'
+  | 'DISQUALIFIED'
+  | 'active'
+  | 'disqualified'
+  | 'withdrawn';
+
 export interface Team {
   teamId: string;
   teamName: string;
   members: [Member, Member, Member];
   accessCode: string;
+  round2Eligible?: boolean;
   /** status managed by organizer */
-  status: 'active' | 'disqualified' | 'withdrawn';
+  status: TeamStatus;
 }
 
 // ----------------------------------------------------------------

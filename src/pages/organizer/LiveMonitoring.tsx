@@ -1,8 +1,22 @@
 import React, { useState } from 'react';
-import { Wifi, WifiOff, RefreshCw, Eye, Lock, Monitor, Smartphone, Laptop } from 'lucide-react';
+import { Wifi, WifiOff, RefreshCw, Eye, Lock, Monitor, Smartphone, Laptop, ShieldAlert, AlertTriangle } from 'lucide-react';
 import OrganizerLayout from '../../components/layout/OrganizerLayout';
 import { MOCK_TEAMS } from '../../data/mock-teams';
 import { useCompetition } from '../../context/CompetitionContext';
+import { db } from '../../firebase/config';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
+
+interface LiveViolation {
+  violationId: string;
+  teamId: string;
+  strikeId: string;
+  violationType: string;
+  warningNumber: number;
+  autoSubmitStatus?: 'AUTO_SUBMIT_TRIGGERED' | 'AUTO_SUBMIT_CONFIRMED' | 'AUTO_SUBMIT_FAILED';
+  autoSubmitError?: string;
+  timestamp: string;
+  details?: string;
+}
 
 const MOCK_DEVICE: Record<string, { type: string; icon: React.ElementType }> = {
   'CRL-0000': { type: 'Desktop', icon: Monitor },
@@ -42,6 +56,46 @@ export default function LiveMonitoring() {
   const { competitionState } = useCompetition();
   const [filter, setFilter] = useState<Filter>('all');
   const [toast, setToast] = useState<string | null>(null);
+  const [violations, setViolations] = useState<LiveViolation[]>([]);
+
+  // Subscribe to real-time anti-cheat violations feed from Firestore
+  React.useEffect(() => {
+    try {
+      const q = query(collection(db, 'violations'), orderBy('timestamp', 'desc'), limit(50));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const list: LiveViolation[] = snapshot.docs.map((docSnap) => {
+            const d = docSnap.data();
+            let ts = 'Just now';
+            if (d.timestamp?.toDate) {
+              ts = d.timestamp.toDate().toLocaleTimeString();
+            } else if (typeof d.timestamp === 'string') {
+              ts = new Date(d.timestamp).toLocaleTimeString();
+            }
+            return {
+              violationId: docSnap.id,
+              teamId: d.teamId || 'Unknown',
+              strikeId: d.strikeId || 'strike1',
+              violationType: d.violationType || 'TAB_SWITCH',
+              warningNumber: d.warningNumber || 1,
+              autoSubmitStatus: d.autoSubmitStatus,
+              autoSubmitError: d.autoSubmitError,
+              timestamp: ts,
+              details: d.details || '',
+            };
+          });
+          setViolations(list);
+        },
+        (err) => {
+          console.warn('[LiveMonitoring] Violations subscription fallback:', err);
+        }
+      );
+      return () => unsubscribe();
+    } catch (e) {
+      console.warn('[LiveMonitoring] Error establishing violations listener:', e);
+    }
+  }, []);
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
@@ -66,6 +120,79 @@ export default function LiveMonitoring() {
             <p className="text-slate-500 text-sm font-mono mt-1">Current strike: <span className="text-cyan-400">{currentStrikeLabel}</span></p>
           </div>
           <button onClick={() => showToast('Refreshing participant status…')} className="btn-ghost flex items-center gap-2 text-sm"><RefreshCw className="w-4 h-4" /> Refresh All</button>
+        </div>
+
+        {/* Real-Time Anti-Cheat / Battle Mode Feed */}
+        <div className="card-dark p-4 border-amber-500/30 bg-dark-900/90">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-400" />
+              <h2 className="text-white font-bold text-sm tracking-wide">ANTI-CHEAT & BATTLE MODE VIOLATIONS FEED</h2>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+            </div>
+            <span className="text-xs font-mono text-slate-400">
+              {violations.length} {violations.length === 1 ? 'event' : 'events'} recorded
+            </span>
+          </div>
+
+          {violations.length === 0 ? (
+            <div className="py-4 text-center border border-dashed border-dark-700 rounded-lg text-xs font-mono text-slate-500">
+              No anti-cheat infractions recorded. All participant sessions in compliance.
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+              {violations.map((v) => {
+                const isStrikeOut = v.warningNumber >= 3;
+                const isSecond = v.warningNumber === 2;
+                const badgeColor = isStrikeOut
+                  ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                  : isSecond
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40';
+
+                return (
+                  <div
+                    key={v.violationId}
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-dark-950/80 border border-dark-700 text-xs font-mono"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-bold text-cyan-400">{v.teamId}</span>
+                      <span className={`px-2 py-0.5 rounded border text-[11px] font-semibold ${badgeColor}`}>
+                        {v.violationType.replace('_', ' ')} (Strike #{v.warningNumber}/3)
+                      </span>
+                      <span className="text-slate-400 hidden sm:inline">{v.details || ''}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-500">{v.timestamp}</span>
+                      {v.autoSubmitStatus === 'AUTO_SUBMIT_CONFIRMED' && (
+                        <span className="px-1.5 py-0.5 bg-emerald-900/40 text-emerald-300 text-[10px] rounded border border-emerald-500/50 font-bold">
+                          SUBMIT CONFIRMED
+                        </span>
+                      )}
+                      {v.autoSubmitStatus === 'AUTO_SUBMIT_TRIGGERED' && (
+                        <span className="px-1.5 py-0.5 bg-yellow-900/40 text-yellow-300 text-[10px] rounded border border-yellow-500/50 font-bold">
+                          SUBMIT PENDING
+                        </span>
+                      )}
+                      {v.autoSubmitStatus === 'AUTO_SUBMIT_FAILED' && (
+                        <span className="px-1.5 py-0.5 bg-red-900/60 text-red-200 text-[10px] rounded border border-red-500 font-bold" title={v.autoSubmitError}>
+                          SUBMIT FAILED: {v.autoSubmitError || 'Network Error'}
+                        </span>
+                      )}
+                      {isStrikeOut && (
+                        <span className="px-1.5 py-0.5 bg-red-900/40 text-red-400 text-[10px] rounded border border-red-700/50 font-bold">
+                          LOCKED
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Filter */}

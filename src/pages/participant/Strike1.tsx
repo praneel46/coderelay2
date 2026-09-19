@@ -21,6 +21,8 @@ import { useCompetition } from '../../context/CompetitionContext';
 import { useTimer } from '../../hooks/useTimer';
 import { MOCK_STRIKE1_QUESTIONS } from '../../data/mock-questions';
 import StrikeCountdownOverlay from '../../components/competition/StrikeCountdownOverlay';
+import { useAntiCheat } from '../../hooks/useAntiCheat';
+import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 import type { Question, MCQOption } from '../../types/competition';
 
 // ----------------------------------------------------------------
@@ -301,6 +303,31 @@ export default function Strike1() {
     });
   };
 
+  const handleAutoSubmit = useCallback(() => {
+    if (activeQuestion && selections[activeQuestion.id] && user?.team) {
+      submitAnswer({
+        questionId: activeQuestion.id,
+        teamId: user.team.teamId,
+        strikeId: 'strike1',
+        answer: selections[activeQuestion.id],
+        status: 'submitted',
+      });
+    }
+    handleTimerExpired();
+  }, [activeQuestion, selections, user, submitAnswer, handleTimerExpired]);
+
+  const {
+    warningCount,
+    activeViolation,
+    isLockedOut,
+    dismissModal,
+  } = useAntiCheat({
+    enabled: phase === 'active' && currentStrikeId === 'strike1',
+    teamId: user?.team?.teamId || '',
+    strikeId: 'strike1',
+    onAutoSubmit: handleAutoSubmit,
+  });
+
   const handleLogout = () => {
     logout();
     navigate('/participant/login', { replace: true });
@@ -321,6 +348,14 @@ export default function Strike1() {
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
+      {/* Anti-Cheat Warning Modal */}
+      <AntiCheatModal
+        violation={activeViolation}
+        warningCount={warningCount}
+        isLockedOut={isLockedOut}
+        onDismiss={dismissModal}
+      />
+
       {/* 5-second countdown banner on strike start */}
       {showCountdown && (
         <StrikeCountdownOverlay

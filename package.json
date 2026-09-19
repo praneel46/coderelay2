@@ -7,7 +7,15 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "teams:provision": "node scripts/provision-teams.mjs",
+    "test:rules": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-rules.mjs\"",
+    "test:deadline": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-deadline-matrix.mjs\"",
+    "test:e2e": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-e2e-relay-flow.mjs\"",
+    "test:hardening": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-hardening-suite.mjs\"",
+    "test:concurrency": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-40-teams-concurrency.mjs\"",
+    "test:csv-import": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-csv-import-workflow.mjs\"",
+    "test:auth-flow": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-participant-auth-flow.mjs\""
   },
   "dependencies": {
     "firebase": "^12.19.0",
@@ -18,11 +26,13 @@
     "react-router-dom": "^7.18.4"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.6.1",
+    "firebase-admin": "^14.4.0",
     "oxlint": "^1.81.0",
     "postcss": "^8.5.28",
     "tailwindcss": "^3.4.19",

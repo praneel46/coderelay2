@@ -41,6 +41,8 @@ export interface IDataProvider {
       predictScore?: number;
       judgeId?: string;
       note?: string;
+      timing?: StrikeTiming;
+      teamName?: string;
     }
   ): Promise<void>;
   subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, onError?: (err: Error) => void): () => void;

@@ -28,3 +28,8 @@ functions/node_modules
 functions/lib
 .firebase
 .env*.local
+service-account*.json
+*serviceAccount*.json
+*service-account*.json
+*credentials*.json
+scripts/secrets/*

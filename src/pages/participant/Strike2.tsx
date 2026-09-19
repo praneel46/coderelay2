@@ -8,6 +8,8 @@ import { useTimer } from '../../hooks/useTimer';
 import { MOCK_STRIKE2_QUESTIONS } from '../../data/mock-questions';
 import DebugQuestion from '../../components/competition/DebugQuestion';
 import StrikeCountdownOverlay from '../../components/competition/StrikeCountdownOverlay';
+import { useAntiCheat } from '../../hooks/useAntiCheat';
+import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 
 // Inline timer bar
 function TimerBar({ endsAt, totalSeconds, onExpired }: { endsAt?: string | null; totalSeconds: number; onExpired: () => void }) {
@@ -78,6 +80,22 @@ export default function Strike2() {
   const submittedCount = submittedIds.size;
   const totalQ = questions.length;
 
+  const handleAutoSubmit = useCallback(() => {
+    handleTimerExpired();
+  }, [handleTimerExpired]);
+
+  const {
+    warningCount,
+    activeViolation,
+    isLockedOut,
+    dismissModal,
+  } = useAntiCheat({
+    enabled: phase === 'active' && currentStrikeId === 'strike2',
+    teamId: user?.team?.teamId || '',
+    strikeId: 'strike2',
+    onAutoSubmit: handleAutoSubmit,
+  });
+
   const [showCountdown, setShowCountdown] = useState(() => {
     if (!activeStrike?.startedAt) return false;
     const diff = (Date.now() - new Date(activeStrike.startedAt).getTime()) / 1000;
@@ -86,6 +104,14 @@ export default function Strike2() {
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
+      {/* Anti-Cheat Warning Modal */}
+      <AntiCheatModal
+        violation={activeViolation}
+        warningCount={warningCount}
+        isLockedOut={isLockedOut}
+        onDismiss={dismissModal}
+      />
+
       {/* 5-second countdown banner on strike start */}
       {showCountdown && (
         <StrikeCountdownOverlay

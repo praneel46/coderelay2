@@ -52,12 +52,30 @@ service cloud.firestore {
         teamId in get(/databases/$(database)/documents/judges/$(currentJudgeId())).data.assignedTeamIds;
     }
 
-    function isParticipant() {
-      return isAuthenticated() && request.auth.token.get('role', '') == 'participant';
-    }
 
     function isTeamMember(teamId) {
-      return isParticipant() && request.auth.token.get('teamId', '') == teamId;
+      return isAuthenticated() && (
+        (request.auth.token.get('teamId', '') != '' && request.auth.token.get('teamId', '').lower() == teamId.lower()) ||
+        (request.auth.token.get('email', '') != '' && request.auth.token.get('email', '').lower() == (teamId.lower() + '@coderelay.com'))
+      );
+    }
+
+    function isCompetitionActiveForStrike(strikeId) {
+      let comp = get(/databases/$(database)/documents/competition/round2).data;
+      let durationSecs = strikeId == 'strike1' ? 300 : (strikeId == 'strike2' ? 900 : 1200);
+      let networkBufferSecs = 15;
+      let deadlineWithBuffer = comp.startTime + duration.value(durationSecs + networkBufferSecs, 's');
+      return comp.phase == 'active' &&
+        comp.currentStrikeId == strikeId &&
+        comp.get('globalLock', false) == false &&
+        comp.startTime != null &&
+        request.time <= deadlineWithBuffer;
+    }
+
+    function isOfficialDeadlineMet(strikeId) {
+      let comp = get(/databases/$(database)/documents/competition/round2).data;
+      let durationSecs = strikeId == 'strike1' ? 300 : (strikeId == 'strike2' ? 900 : 1200);
+      return comp.startTime != null && request.time <= comp.startTime + duration.value(durationSecs, 's');
     }
 
     // ------------------------------------------------------------
@@ -74,29 +92,47 @@ service cloud.firestore {
     // Teams Collection (/teams/{teamId})
     // Public details (names, status) readable by all authenticated users.
     // Writes restricted to Organizers.
+    // Participant can only advance status: READY -> ACTIVE, ACTIVE -> COMPLETED.
     // ------------------------------------------------------------
     match /teams/{teamId} {
       allow read: if isAuthenticated();
-      allow write: if isOrganizer();
+      allow create, delete: if isOrganizer();
+      allow update: if (
+        isOrganizer() && (
+          !(resource.data.status in ['READY', 'ACTIVE', 'COMPLETED', 'DISQUALIFIED'] && request.resource.data.status == 'QUALIFIED_FOR_ROUND_2')
+        )
+      ) || (
+        isTeamMember(teamId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'startedAt', 'completedAt', 'updatedAt']) &&
+        (
+          (resource.data.status in ['READY', 'ready'] && request.resource.data.status == 'ACTIVE') ||
+          (resource.data.status in ['ACTIVE', 'active'] && request.resource.data.status == 'COMPLETED')
+        )
+      );
     }
 
     // ------------------------------------------------------------
     // Team Credentials (/team_credentials/{teamId})
     // CRITICAL: NEVER readable or writable by participants or judges.
-    // Only Cloud Functions (Admin SDK) and Organizers can access.
     // ------------------------------------------------------------
     match /team_credentials/{teamId} {
-      allow read, write: if isOrganizer();
+      allow read, write: if false;
     }
 
     // ------------------------------------------------------------
     // Questions Collection (/questions/{questionId})
     // Questions are readable by all authenticated participants and judges.
     // Writes restricted to Organizers.
+    // Published questions for the currently active strike are locked.
     // ------------------------------------------------------------
     match /questions/{questionId} {
       allow read: if isAuthenticated();
-      allow write: if isOrganizer();
+      allow create: if isOrganizer();
+      allow update, delete: if isOrganizer() && (
+        !exists(/databases/$(database)/documents/competition/round2) ||
+        get(/databases/$(database)/documents/competition/round2).data.phase != 'active' ||
+        get(/databases/$(database)/documents/competition/round2).data.currentStrikeId != resource.data.strikeId
+      );
     }
 
     // ------------------------------------------------------------
@@ -117,23 +153,49 @@ service cloud.firestore {
     // - Participants can read ONLY their own team's submissions.
     // - Submissions cannot be modified once status is 'locked'.
     // - Submissions cannot be overwritten by other teams.
+    // - Authoritative server timestamp required: submittedAt == request.time.
+    // - Server-enforced deadline check via isCompetitionActiveForStrike().
+    // - Client cannot claim withinOfficialDeadline: true if server time exceeded official deadline.
     // ------------------------------------------------------------
     match /submissions/{submissionId} {
       allow read: if isOrganizer() ||
         isJudgeAssignedToTeam(resource.data.teamId) ||
-        (isParticipant() && resource.data.teamId == request.auth.token.get('teamId', ''));
+        isTeamMember(resource.data.teamId);
       
-      // Participant create/update:
-      allow create: if isParticipant() &&
-        request.resource.data.teamId == request.auth.token.get('teamId', '') &&
-        request.resource.data.get('status', '') != 'locked';
+      // Participant create:
+      allow create: if isTeamMember(request.resource.data.teamId) &&
+        request.resource.data.get('status', '') != 'locked' &&
+        request.resource.data.submittedAt == request.time &&
+        isCompetitionActiveForStrike(request.resource.data.strikeId) &&
+        (
+          request.resource.data.get('withinOfficialDeadline', null) == true ?
+          isOfficialDeadlineMet(request.resource.data.strikeId) :
+          true
+        ) &&
+        (
+          request.resource.data.get('acceptedViaNetworkBuffer', null) == false ?
+          isOfficialDeadlineMet(request.resource.data.strikeId) :
+          true
+        );
 
+      // Participant update:
       allow update: if (
-        isParticipant() &&
-        request.resource.data.teamId == request.auth.token.get('teamId', '') &&
-        resource.data.teamId == request.auth.token.get('teamId', '') &&
+        isTeamMember(request.resource.data.teamId) &&
+        resource.data.teamId == request.resource.data.teamId &&
         resource.data.get('status', '') != 'locked' &&
-        request.resource.data.get('status', '') != 'locked'
+        request.resource.data.get('status', '') != 'locked' &&
+        request.resource.data.submittedAt == request.time &&
+        isCompetitionActiveForStrike(request.resource.data.strikeId) &&
+        (
+          request.resource.data.get('withinOfficialDeadline', null) == true ?
+          isOfficialDeadlineMet(request.resource.data.strikeId) :
+          true
+        ) &&
+        (
+          request.resource.data.get('acceptedViaNetworkBuffer', null) == false ?
+          isOfficialDeadlineMet(request.resource.data.strikeId) :
+          true
+        )
       ) || isOrganizer();
 
       allow delete: if isOrganizer();
@@ -189,7 +251,7 @@ service cloud.firestore {
     // ------------------------------------------------------------
     match /results/{teamId} {
       allow read: if isAuthenticated();
-      allow write: if isOrganizer();
+      allow write: if isOrganizer() || isJudgeAssignedToTeam(teamId);
     }
 
     // ------------------------------------------------------------
@@ -213,6 +275,32 @@ service cloud.firestore {
       allow read: if isOrganizer();
       allow create: if isOrganizer() || isJudge();
       allow update, delete: if false; // Immutable audit logs
+    }
+
+    // ------------------------------------------------------------
+    // Anti-Cheat Violations (/violations/{violationId})
+    // Real-time violation tracking for Fullscreen and Tab Switches.
+    // Organizers can read all violations.
+    // Participants can log violations for their own team.
+    // Update and delete are forbidden (immutable log).
+    // ------------------------------------------------------------
+    match /violations/{violationId} {
+      allow read: if isOrganizer();
+      allow create: if isAuthenticated() && (
+        isOrganizer() ||
+        (isTeamMember(request.resource.data.teamId) && request.resource.data.timestamp == request.time)
+      );
+      // Allow team to transition auto-submit status from TRIGGERED to CONFIRMED or FAILED
+      allow update: if isAuthenticated() && (
+        isOrganizer() || (
+          isTeamMember(resource.data.teamId) &&
+          resource.data.teamId == request.resource.data.teamId &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['autoSubmitStatus', 'confirmedAt', 'autoSubmitError']) &&
+          resource.data.get('autoSubmitStatus', '') == 'AUTO_SUBMIT_TRIGGERED' &&
+          request.resource.data.autoSubmitStatus in ['AUTO_SUBMIT_CONFIRMED', 'AUTO_SUBMIT_FAILED']
+        )
+      );
+      allow delete: if false;
     }
 
     // ------------------------------------------------------------

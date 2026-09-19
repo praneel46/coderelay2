@@ -1,13 +1,12 @@
 // ============================================================
 // VIGYANTRA 2026 — CODE RELAY
 // Firebase Configuration & Initialization
-// Initializes once and exports auth, firestore, and functions instances.
+// Initializes once and exports auth and firestore instances (Spark-compatible).
 // ============================================================
 
 import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
-import { getFunctions, type Functions } from 'firebase/functions';
 import { initAppCheck } from './appCheck';
 
 const firebaseConfig = {
@@ -27,11 +26,10 @@ if (!getApps().length) {
   app = getApp();
 }
 
-// Initialize App Check before backend services that require App Check (Firestore, Functions)
+// Initialize App Check before backend services that require App Check (Firestore, Auth)
 initAppCheck(app);
 
 export const auth: Auth = getAuth(app);
 export const db: Firestore = getFirestore(app);
-export const functions: Functions = getFunctions(app, 'asia-south1'); // standard India/regional node
 
 export default app;
