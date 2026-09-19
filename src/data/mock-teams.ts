@@ -124,7 +124,7 @@ export function validateParticipantCredentials(
   const team = MOCK_TEAMS.find(
     (t) =>
       t.teamId.toUpperCase() === normalizedTeamId &&
-      (t.accessCode === normalizedCode || normalizedCode === 'MOCK-PASS' || normalizedCode === '0000')
+      t.accessCode === normalizedCode
   );
   return team ?? null;
 }

@@ -2,7 +2,7 @@
 // VIGYANTRA 2026 — CODE RELAY
 // Firebase Data Provider
 // Production-grade backend implementation using Firebase Auth,
-// Cloud Firestore, and 2nd Gen Cloud Functions.
+// Cloud Firestore, and Security Rules (Spark-only architecture).
 // ============================================================
 
 import type { IDataProvider } from './types';
