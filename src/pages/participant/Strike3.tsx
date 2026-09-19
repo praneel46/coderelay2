@@ -31,25 +31,46 @@ type Section = 'code' | 'debug';
 export default function Strike3() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { competitionState, submitAnswer, isQuestionLocked, getSubmission, onStrikeTimerExpired, carryForward } = useCompetition();
+  const {
+    competitionState,
+    submitAnswer,
+    submitStrikeEarly,
+    isStrikeCompleted,
+    isQuestionLocked,
+    getSubmission,
+    onStrikeTimerExpired,
+    carryForward,
+  } = useCompetition();
   const { phase, currentStrikeId, activeStrike } = competitionState;
   const [section, setSection] = useState<Section>('code');
   const [codeIdx, setCodeIdx] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
+  const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
   useEffect(() => {
+    if (isStrikeCompleted('strike3')) {
+      navigate('/participant/round-complete', { replace: true });
+      return;
+    }
     if (phase === 'complete' && competitionState.completedStrikes.includes('strike3')) {
       navigate('/participant/round-complete', { replace: true });
     } else if (phase !== 'active' || currentStrikeId !== 'strike3') {
       navigate('/participant/waiting', { replace: true });
     }
-  }, [phase, currentStrikeId, competitionState.completedStrikes, navigate]);
+  }, [phase, currentStrikeId, competitionState.completedStrikes, isStrikeCompleted, navigate]);
 
-  const handleTimerExpired = useCallback(() => {
+  const handleTimerExpired = useCallback(async () => {
     setTimerExpired(true);
+    await submitStrikeEarly('strike3');
     onStrikeTimerExpired();
     navigate('/participant/round-complete');
-  }, [onStrikeTimerExpired, navigate]);
+  }, [onStrikeTimerExpired, submitStrikeEarly, navigate]);
+
+  const handleEarlySubmit = async () => {
+    setShowEarlySubmitConfirm(false);
+    await submitStrikeEarly('strike3');
+    navigate('/participant/round-complete', { replace: true });
+  };
 
   const codeQuestions = MOCK_STRIKE3_QUESTIONS;
   // Only carried-forward DEBUG questions (not yet submitted)
@@ -120,12 +141,50 @@ export default function Strike3() {
             </div>
             {user?.team && <p className="text-slate-500 text-xs font-mono mt-0.5">{user.team.teamId} · {user.team.teamName}</p>}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <TimerBar endsAt={activeStrike?.endsAt} totalSeconds={20 * 60} onExpired={handleTimerExpired} />
+            <button
+              onClick={() => setShowEarlySubmitConfirm(true)}
+              className="btn-primary text-xs font-mono font-bold uppercase tracking-wider px-3 py-1.5 bg-purple-600 hover:bg-purple-500 border border-purple-400/30 flex items-center gap-1.5 shadow-sm"
+              title="Finalize all submissions and complete Round 2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Finish Competition
+            </button>
             <button onClick={() => { logout(); navigate('/participant/login', { replace: true }); }} className="btn-ghost p-2" aria-label="Logout"><LogOut className="w-4 h-4" /></button>
           </div>
         </div>
       </header>
+
+      {/* Early Finish Confirmation Modal */}
+      {showEarlySubmitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-dark-800 border border-purple-500/40 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <Zap className="w-5 h-5 text-purple-400" />
+              <h3 className="text-lg font-bold text-white">FINISH COMPETITION?</h3>
+            </div>
+            <p className="text-slate-300 text-sm leading-relaxed">
+              You have submitted {codeSubmittedIds.size} of {codeQuestions.length} code challenges.
+              Finishing now will permanently finalize your full relay submission and complete Round 2.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowEarlySubmitConfirm(false)}
+                className="btn-ghost flex-1 text-center"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEarlySubmit}
+                className="btn-primary flex-1 bg-purple-600 hover:bg-purple-500"
+              >
+                Confirm & Finish
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         <div>

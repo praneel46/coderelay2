@@ -128,7 +128,7 @@ export interface FirestoreResultDoc {
   predictScore: number;
   debugMarks: number | null;
   codeMarks: number | null;
-  debugCodeTotal: number;
+  debugCodeTotal: number | null;
   finalScore: number;
   evaluationStatus: EvaluationStatus;
   timing: StrikeTiming;

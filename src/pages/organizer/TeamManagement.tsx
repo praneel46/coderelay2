@@ -39,6 +39,7 @@ import {
   orderBy,
   addDoc,
 } from 'firebase/firestore';
+import { syncJudgeAssignmentsToFirestore } from '../../services/judge-assignment';
 
 const MOCK_CONNECTION: Record<string, 'connected' | 'offline'> = {
   'CRL-0000': 'connected',
@@ -369,7 +370,28 @@ export default function TeamManagement() {
 
       await Promise.all(writePromises);
 
-      // 2. Append immutable audit log event
+      // 2. Automatically distribute all qualified teams equally across active judges and initialize leaderboard results
+      try {
+        const allQualified = [
+          ...teams.filter(
+            (t) =>
+              t.round2Eligible === true ||
+              t.status === 'QUALIFIED_FOR_ROUND_2' ||
+              t.status === 'READY' ||
+              t.status === 'ACTIVE' ||
+              t.status === 'COMPLETED'
+          ),
+          ...valid,
+        ];
+        const uniqueQualified = Array.from(
+          new Map(allQualified.map((t) => [t.teamId.toUpperCase(), t])).values()
+        );
+        await syncJudgeAssignmentsToFirestore(db, uniqueQualified);
+      } catch (judgeErr) {
+        console.warn('[TeamManagement] Judge auto-assignment notice:', judgeErr);
+      }
+
+      // 3. Append immutable audit log event
       try {
         await addDoc(collection(db, 'auditLogs'), {
           logId: `log_${Date.now()}`,
@@ -557,6 +579,27 @@ export default function TeamManagement() {
 
     try {
       await setDoc(doc(db, 'teams', normalizedId), firestorePayload, { merge: true });
+
+      // Automatically sync judge assignments and initialize results for all qualified teams
+      try {
+        const allQualified = [
+          ...teams.filter(
+            (t) =>
+              t.round2Eligible === true ||
+              t.status === 'QUALIFIED_FOR_ROUND_2' ||
+              t.status === 'READY' ||
+              t.status === 'ACTIVE' ||
+              t.status === 'COMPLETED'
+          ),
+          built,
+        ];
+        const uniqueQualified = Array.from(
+          new Map(allQualified.map((t) => [t.teamId.toUpperCase(), t])).values()
+        );
+        await syncJudgeAssignmentsToFirestore(db, uniqueQualified);
+      } catch (judgeErr) {
+        console.warn('[TeamManagement] Manual team judge auto-assignment notice:', judgeErr);
+      }
 
       // Audit log
       try {

@@ -297,20 +297,21 @@ export class FirebaseDataProvider implements IDataProvider {
     const evalRef = doc(db, COLLECTIONS.EVALUATIONS, evalId);
 
     const predict = scores.predictScore ?? 0;
-    const debug = scores.debugMarks ?? 0;
-    const code = scores.codeMarks ?? 0;
-    const total = predict + debug + code;
+    const debug = scores.debugMarks !== undefined ? scores.debugMarks : null;
+    const code = scores.codeMarks !== undefined ? scores.codeMarks : null;
+    const debugCodeTotal = debug !== null || code !== null ? (debug ?? 0) + (code ?? 0) : null;
+    const total = predict + (debug ?? 0) + (code ?? 0);
 
     const payload = {
       evaluationId: evalId,
       teamId,
       judgeId: scores.judgeId || 'J001',
       predictScore: predict,
-      debugMarks: scores.debugMarks,
-      codeMarks: scores.codeMarks,
-      debugCodeTotal: debug + code,
+      debugMarks: debug,
+      codeMarks: code,
+      debugCodeTotal,
       finalScore: total,
-      status: scores.debugMarks !== null && scores.codeMarks !== null ? 'submitted' : 'in_progress',
+      status: debug !== null && code !== null ? 'submitted' : 'in_progress',
       updatedAt: new Date().toISOString(),
     };
 
@@ -324,11 +325,11 @@ export class FirebaseDataProvider implements IDataProvider {
         teamId,
         ...(scores.teamName ? { teamName: scores.teamName } : {}),
         predictScore: predict,
-        debugMarks: scores.debugMarks,
-        codeMarks: scores.codeMarks,
-        debugCodeTotal: debug + code,
+        debugMarks: debug,
+        codeMarks: code,
+        debugCodeTotal,
         finalScore: total,
-        evaluationStatus: scores.debugMarks !== null && scores.codeMarks !== null ? 'evaluated' : 'in_progress',
+        evaluationStatus: debug !== null && code !== null ? 'evaluated' : 'in_progress',
         ...(scores.timing ? { timing: scores.timing } : {}),
         updatedAt: new Date().toISOString(),
       },

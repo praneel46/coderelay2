@@ -20,7 +20,7 @@ export interface RankEntry {
   predictScore: number;     // out of 30
   debugMarks: number | null; // out of 60 (null when pending)
   codeMarks: number | null;  // out of 60 (null when pending)
-  debugCodeTotal: number;   // debugMarks + codeMarks
+  debugCodeTotal: number | null;   // debugMarks + codeMarks (null when neither evaluated)
   finalScore: number;       // predictScore + debugCodeTotal
   evaluationStatus: EvaluationStatus;
   timing: StrikeTiming;

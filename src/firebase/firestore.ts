@@ -29,7 +29,7 @@ import type {
 } from './schema';
 import type { CompetitionState } from '../types/competition-state';
 import type { Submission } from '../types/competition';
-import type { RankEntry } from '../types/results';
+import type { RankEntry, EvaluationStatus } from '../types/results';
 
 // ----------------------------------------------------------------
 // Collection References
@@ -92,55 +92,128 @@ export function subscribeToLeaderboard(
   onUpdate: (results: RankEntry[]) => void,
   onError?: (err: Error) => void
 ): Unsubscribe {
-  const resultsQuery = query(collection(db, COLLECTIONS.RESULTS), orderBy('finalScore', 'desc'));
+  let teamsMap = new Map<string, { teamId: string; teamName: string; status: string; round2Eligible?: boolean }>();
+  let resultsMap = new Map<string, FirestoreResultDoc>();
 
-  return onSnapshot(
-    resultsQuery,
-    (snapshot) => {
-      const rawEntries = snapshot.docs.map((docSnap) => {
-        const d = docSnap.data() as FirestoreResultDoc;
-        return {
-          teamId: d.teamId,
-          teamName: d.teamName || `Team ${d.teamId}`,
-          predictScore: d.predictScore ?? 0,
-          debugMarks: d.debugMarks ?? null,
-          codeMarks: d.codeMarks ?? null,
-          debugCodeTotal: d.debugCodeTotal ?? ((d.debugMarks ?? 0) + (d.codeMarks ?? 0)),
-          finalScore: d.finalScore ?? 0,
-          evaluationStatus: d.evaluationStatus || 'pending',
-          timing: d.timing || {},
-          tieBreakerApplied: d.tieBreakerApplied || false,
-        };
-      });
+  const rebuildLeaderboard = () => {
+    // 1. Source population: ALL qualified Round 2 teams
+    const qualifiedTeams = Array.from(teamsMap.values()).filter(
+      (t) =>
+        t.round2Eligible === true ||
+        t.status === 'QUALIFIED_FOR_ROUND_2' ||
+        t.status === 'READY' ||
+        t.status === 'ACTIVE' ||
+        t.status === 'active' ||
+        t.status === 'COMPLETED'
+    );
 
-      // Strict tie-breaker sorting:
-      // 1. Highest finalScore wins
-      // 2. Lowest totalElapsedSeconds wins tie-break (time NEVER deducts score)
-      rawEntries.sort((a, b) => {
-        if (b.finalScore !== a.finalScore) {
-          return b.finalScore - a.finalScore;
-        }
-        const timeA = a.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
-        const timeB = b.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
+    const rawEntries = qualifiedTeams.map((team) => {
+      const d = resultsMap.get(team.teamId);
+      const predictScore = d?.predictScore ?? 0;
+      const debugMarks = d?.debugMarks ?? null;
+      const codeMarks = d?.codeMarks ?? null;
+      const debugCodeTotal =
+        debugMarks !== null || codeMarks !== null
+          ? (debugMarks ?? 0) + (codeMarks ?? 0)
+          : null;
+      const finalScore = predictScore + (debugMarks ?? 0) + (codeMarks ?? 0);
+
+      let evaluationStatus: EvaluationStatus = 'pending';
+      if (debugMarks !== null && codeMarks !== null) {
+        evaluationStatus = 'evaluated';
+      } else if (debugMarks !== null || codeMarks !== null) {
+        evaluationStatus = 'in_progress';
+      } else if (d?.evaluationStatus) {
+        evaluationStatus = d.evaluationStatus;
+      }
+
+      return {
+        teamId: team.teamId,
+        teamName: team.teamName || d?.teamName || `Team ${team.teamId}`,
+        predictScore,
+        debugMarks,
+        codeMarks,
+        debugCodeTotal,
+        finalScore,
+        evaluationStatus,
+        timing: d?.timing || {},
+        tieBreakerApplied: false,
+      };
+    });
+
+    // Strict tie-breaker sorting:
+    // 1. Highest finalScore wins
+    // 2. Lowest totalElapsedSeconds wins tie-break (time NEVER deducts score)
+    // 3. Stable alphabetical teamId
+    rawEntries.sort((a, b) => {
+      if (b.finalScore !== a.finalScore) {
+        return b.finalScore - a.finalScore;
+      }
+      const timeA = a.timing?.finalSubmittedAt
+        ? new Date(a.timing.finalSubmittedAt).getTime()
+        : a.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
+      const timeB = b.timing?.finalSubmittedAt
+        ? new Date(b.timing.finalSubmittedAt).getTime()
+        : b.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
+      if (timeA !== timeB) {
         return timeA - timeB;
-      });
+      }
+      return a.teamId.localeCompare(b.teamId);
+    });
 
-      const entries: RankEntry[] = rawEntries.map((entry, index, arr) => {
-        const isTiedWithPrev = index > 0 && arr[index - 1].finalScore === entry.finalScore;
-        const isTiedWithNext = index < arr.length - 1 && arr[index + 1].finalScore === entry.finalScore;
-        return {
-          ...entry,
-          rank: index + 1,
-          tieBreakerApplied: isTiedWithPrev || isTiedWithNext,
-        };
+    const entries: RankEntry[] = rawEntries.map((entry, index, arr) => {
+      const isTiedWithPrev = index > 0 && arr[index - 1].finalScore === entry.finalScore;
+      const isTiedWithNext = index < arr.length - 1 && arr[index + 1].finalScore === entry.finalScore;
+      return {
+        ...entry,
+        rank: index + 1,
+        tieBreakerApplied: isTiedWithPrev || isTiedWithNext,
+      };
+    });
+
+    onUpdate(entries);
+  };
+
+  const unsubTeams = onSnapshot(
+    collection(db, COLLECTIONS.TEAMS),
+    (snapshot) => {
+      teamsMap = new Map();
+      snapshot.docs.forEach((docSnap) => {
+        const d = docSnap.data();
+        teamsMap.set(docSnap.id, {
+          teamId: d.teamId || docSnap.id,
+          teamName: d.teamName || `Team ${docSnap.id}`,
+          status: d.status || 'QUALIFIED_FOR_ROUND_2',
+          round2Eligible: d.round2Eligible ?? true,
+        });
       });
-      onUpdate(entries);
+      rebuildLeaderboard();
     },
     (err) => {
       if (onError) onError(err);
-      else console.error('[Firestore] Leaderboard subscription error:', err);
+      else console.error('[Firestore] Teams subscription error in leaderboard:', err);
     }
   );
+
+  const unsubResults = onSnapshot(
+    collection(db, COLLECTIONS.RESULTS),
+    (snapshot) => {
+      resultsMap = new Map();
+      snapshot.docs.forEach((docSnap) => {
+        resultsMap.set(docSnap.id, docSnap.data() as FirestoreResultDoc);
+      });
+      rebuildLeaderboard();
+    },
+    (err) => {
+      if (onError) onError(err);
+      else console.error('[Firestore] Results subscription error in leaderboard:', err);
+    }
+  );
+
+  return () => {
+    unsubTeams();
+    unsubResults();
+  };
 }
 
 // ----------------------------------------------------------------

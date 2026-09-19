@@ -48,24 +48,44 @@ function QNav({ questions, activeIndex, onSelect, submittedIds }: { questions: t
 export default function Strike2() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { competitionState, submitAnswer, isQuestionLocked, getSubmission, onStrikeTimerExpired } = useCompetition();
+  const {
+    competitionState,
+    submitAnswer,
+    submitStrikeEarly,
+    isStrikeCompleted,
+    isQuestionLocked,
+    getSubmission,
+    onStrikeTimerExpired,
+  } = useCompetition();
   const { phase, currentStrikeId, activeStrike } = competitionState;
   const [activeIdx, setActiveIdx] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
+  const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
   useEffect(() => {
+    if (isStrikeCompleted('strike2')) {
+      navigate('/participant/strike-complete', { state: { completedStrikeId: 'strike2' }, replace: true });
+      return;
+    }
     if (phase === 'complete' && competitionState.completedStrikes.includes('strike2')) {
       navigate('/participant/strike-complete', { state: { completedStrikeId: 'strike2' }, replace: true });
     } else if (phase !== 'active' || currentStrikeId !== 'strike2') {
       navigate('/participant/waiting', { replace: true });
     }
-  }, [phase, currentStrikeId, competitionState.completedStrikes, navigate]);
+  }, [phase, currentStrikeId, competitionState.completedStrikes, isStrikeCompleted, navigate]);
 
-  const handleTimerExpired = useCallback(() => {
+  const handleTimerExpired = useCallback(async () => {
     setTimerExpired(true);
+    await submitStrikeEarly('strike2');
     onStrikeTimerExpired();
     navigate('/participant/strike-complete', { state: { completedStrikeId: 'strike2' } });
-  }, [onStrikeTimerExpired, navigate]);
+  }, [onStrikeTimerExpired, submitStrikeEarly, navigate]);
+
+  const handleEarlySubmit = async () => {
+    setShowEarlySubmitConfirm(false);
+    await submitStrikeEarly('strike2');
+    navigate('/participant/strike-complete', { state: { completedStrikeId: 'strike2' }, replace: true });
+  };
 
   const questions = MOCK_STRIKE2_QUESTIONS;
   const activeQuestion = questions[activeIdx];
@@ -119,12 +139,51 @@ export default function Strike2() {
             </div>
             {user?.team && <p className="text-slate-500 text-xs font-mono mt-0.5">{user.team.teamId} · {user.team.teamName}</p>}
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <TimerBar endsAt={activeStrike?.endsAt} totalSeconds={15 * 60} onExpired={handleTimerExpired} />
+            <button
+              onClick={() => setShowEarlySubmitConfirm(true)}
+              className="btn-primary text-xs font-mono font-bold uppercase tracking-wider px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 flex items-center gap-1.5 shadow-sm"
+              title="Finish Strike 2 and move to Waiting Room"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Submit Strike
+            </button>
             <button onClick={() => { logout(); navigate('/participant/login', { replace: true }); }} className="btn-ghost p-2" aria-label="Logout"><LogOut className="w-4 h-4" /></button>
           </div>
         </div>
       </header>
+
+      {/* Early Submit Confirmation Modal */}
+      {showEarlySubmitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-dark-800 border border-indigo-500/40 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <Zap className="w-5 h-5 text-indigo-400" />
+              <h3 className="text-lg font-bold text-white">SUBMIT STRIKE 2?</h3>
+            </div>
+            <p className="text-slate-300 text-sm leading-relaxed">
+              You have submitted {submittedCount} of {totalQ} debug questions.
+              Any unanswered debug questions will be carried forward to Strike 3.
+              Submitting now will move your team to the Waiting Room for Strike 3.
+            </p>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => setShowEarlySubmitConfirm(false)}
+                className="btn-ghost flex-1 text-center"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEarlySubmit}
+                className="btn-primary flex-1 bg-indigo-600 hover:bg-indigo-500"
+              >
+                Confirm & Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 space-y-6">
         {/* Title + nav */}

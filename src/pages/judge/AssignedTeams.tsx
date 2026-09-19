@@ -1,10 +1,12 @@
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, FileText, ArrowRight, CheckCircle2, Clock, Scale } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { useAuth } from '../../context/AuthContext';
 import { useCompetition } from '../../context/CompetitionContext';
-import { MOCK_JUDGES } from '../../data/mock-judges';
-import { MOCK_TEAMS } from '../../data/mock-teams';
+import { db } from '../../firebase/config';
+import { doc, onSnapshot, collection } from 'firebase/firestore';
+import { DEFAULT_ACTIVE_JUDGES } from '../../services/judge-assignment';
 
 interface TeamEvaluationCardData {
   teamId: string;
@@ -25,11 +27,69 @@ export default function AssignedTeams() {
   const navigate = useNavigate();
   const { getTeamEvaluation } = useCompetition();
 
-  const currentJudge = MOCK_JUDGES.find((j) => j.judgeId === user?.judgeId) || MOCK_JUDGES[0];
-  const assignedIds = currentJudge.assignedTeamIds;
+  const judgeId = user?.judgeId || 'J001';
+  const defaultJudge = DEFAULT_ACTIVE_JUDGES.find((j) => j.judgeId === judgeId) || DEFAULT_ACTIVE_JUDGES[0];
+
+  const [judgeData, setJudgeData] = useState<{
+    judgeId: string;
+    name: string;
+    assignedTeamIds: string[];
+  }>({
+    judgeId,
+    name: defaultJudge.name,
+    assignedTeamIds: defaultJudge.assignedTeamIds || [],
+  });
+
+  const [teamsMap, setTeamsMap] = useState<Map<string, { teamId: string; teamName: string }>>(new Map());
+
+  // 1. Subscribe to real-time /judges/{judgeId} doc
+  useEffect(() => {
+    const judgeRef = doc(db, 'judges', judgeId);
+    const unsub = onSnapshot(
+      judgeRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const d = docSnap.data();
+          setJudgeData({
+            judgeId: d.judgeId || judgeId,
+            name: d.name || defaultJudge.name,
+            assignedTeamIds: Array.isArray(d.assignedTeamIds) ? d.assignedTeamIds : [],
+          });
+        }
+      },
+      (err) => {
+        console.warn('[AssignedTeams] Judge doc subscription error:', err);
+      }
+    );
+    return () => unsub();
+  }, [judgeId, defaultJudge.name]);
+
+  // 2. Subscribe to /teams to get team names
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'teams'),
+      (snapshot) => {
+        const nextMap = new Map<string, { teamId: string; teamName: string }>();
+        snapshot.docs.forEach((docSnap) => {
+          const d = docSnap.data();
+          nextMap.set(docSnap.id, {
+            teamId: d.teamId || docSnap.id,
+            teamName: d.teamName || `Team ${docSnap.id}`,
+          });
+        });
+        setTeamsMap(nextMap);
+      },
+      (err) => {
+        console.warn('[AssignedTeams] Teams subscription error:', err);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const assignedIds = judgeData.assignedTeamIds;
 
   const getTeamCardData = (teamId: string): TeamEvaluationCardData => {
-    const team = MOCK_TEAMS.find((t) => t.teamId === teamId);
+    const team = teamsMap.get(teamId);
     const evalData = getTeamEvaluation(teamId);
 
     const hasDebug = evalData.debugMarks !== null;
@@ -43,8 +103,8 @@ export default function AssignedTeams() {
       teamId,
       teamName: team ? team.teamName : `Team ${teamId}`,
       predictScore: evalData.predictScore,
-      debugStatus: 'SUBMITTED',
-      codeStatus: 'SUBMITTED',
+      debugStatus: hasDebug ? 'SUBMITTED' : 'PENDING',
+      codeStatus: hasCode ? 'SUBMITTED' : 'PENDING',
       evaluationStatus: evalStatus,
       evaluatedScore: {
         debug: evalData.debugMarks,
@@ -70,7 +130,7 @@ export default function AssignedTeams() {
               MY ASSIGNED TEAMS
             </h1>
             <p className="text-slate-500 text-sm font-mono mt-1">
-              Teams allocated to <span className="text-emerald-400 font-semibold">{currentJudge.name}</span> for Round 2 evaluation
+              Teams allocated to <span className="text-emerald-400 font-semibold">{judgeData.name} ({judgeData.judgeId})</span> for Round 2 evaluation
             </p>
           </div>
           <div className="flex items-center gap-4 bg-dark-800 border border-dark-700 px-4 py-2 rounded-xl font-mono text-xs">
@@ -106,7 +166,7 @@ export default function AssignedTeams() {
                     <span className="text-slate-600">·</span>
                     <h2 className="text-white font-bold text-lg">{card.teamName}</h2>
                   </div>
-                  <p className="text-slate-500 text-xs font-mono">Round 2 Participant</p>
+                  <p className="text-slate-500 text-xs font-mono">Round 2 Qualified Team</p>
                 </div>
                 <div>
                   {card.evaluationStatus === 'EVALUATED' ? (
@@ -137,7 +197,7 @@ export default function AssignedTeams() {
                 <div className="bg-dark-900/80 p-3 rounded-lg border border-dark-700">
                   <span className="text-slate-500 block uppercase text-[10px]">Strike 2 (Debug)</span>
                   <span className="text-indigo-400 font-bold text-sm mt-0.5 block">
-                    {card.evaluatedScore?.debug !== null ? `${card.evaluatedScore?.debug} / 60` : card.debugStatus}
+                    {card.evaluatedScore?.debug !== null ? `${card.evaluatedScore?.debug} / 60` : 'PENDING'}
                   </span>
                   <span className="text-[10px] text-slate-600 block mt-0.5">
                     {card.evaluatedScore?.debug !== null ? 'Score Saved' : 'Needs Review'}
@@ -146,7 +206,7 @@ export default function AssignedTeams() {
                 <div className="bg-dark-900/80 p-3 rounded-lg border border-dark-700">
                   <span className="text-slate-500 block uppercase text-[10px]">Strike 3 (Code)</span>
                   <span className="text-purple-400 font-bold text-sm mt-0.5 block">
-                    {card.evaluatedScore?.code !== null ? `${card.evaluatedScore?.code} / 60` : card.codeStatus}
+                    {card.evaluatedScore?.code !== null ? `${card.evaluatedScore?.code} / 60` : 'PENDING'}
                   </span>
                   <span className="text-[10px] text-slate-600 block mt-0.5">
                     {card.evaluatedScore?.code !== null ? 'Score Saved' : 'Needs Review'}

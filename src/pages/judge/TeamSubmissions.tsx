@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { MOCK_TEAMS } from '../../data/mock-teams';
+import { db } from '../../firebase/config';
+import { doc, onSnapshot } from 'firebase/firestore';
 import {
   MOCK_STRIKE1_QUESTIONS,
   MOCK_STRIKE2_QUESTIONS,
@@ -74,11 +76,43 @@ export default function TeamSubmissions() {
     showToast(`Code score saved (${score}/60). Leaderboard updated.`);
   };
 
-  const team = MOCK_TEAMS.find((t) => t.teamId === teamId) || {
-    teamId: teamId || 'CRL-0000',
-    teamName: 'Unknown Team',
-    members: [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
-  };
+  const [teamInfo, setTeamInfo] = useState<{
+    teamId: string;
+    teamName: string;
+    members: { name: string }[];
+  }>(() => {
+    const found = MOCK_TEAMS.find((t) => t.teamId === teamId);
+    return (
+      found || {
+        teamId: teamId || 'CRL-0000',
+        teamName: `Team ${teamId}`,
+        members: [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
+      }
+    );
+  });
+
+  useEffect(() => {
+    if (!teamId) return;
+    const unsub = onSnapshot(
+      doc(db, 'teams', teamId),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setTeamInfo({
+            teamId: d.teamId || teamId,
+            teamName: d.teamName || `Team ${teamId}`,
+            members: d.members || [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
+          });
+        }
+      },
+      (err) => {
+        console.warn('[TeamSubmissions] Error fetching team doc:', err);
+      }
+    );
+    return () => unsub();
+  }, [teamId]);
+
+  const team = teamInfo;
 
   // Mock participant submission data for the judge to inspect
   const mockPredictAnswers: Record<string, string> = {

@@ -248,8 +248,8 @@ export class MockDataProvider implements IDataProvider {
     const newPredict = scores.predictScore ?? existing?.predictScore ?? 24;
     const newDebug = scores.debugMarks !== undefined ? scores.debugMarks : (existing?.debugMarks ?? null);
     const newCode = scores.codeMarks !== undefined ? scores.codeMarks : (existing?.codeMarks ?? null);
-    const debugCodeTotal = (newDebug ?? 0) + (newCode ?? 0);
-    const finalScore = newPredict + debugCodeTotal;
+    const debugCodeTotal = newDebug !== null || newCode !== null ? (newDebug ?? 0) + (newCode ?? 0) : null;
+    const finalScore = newPredict + (newDebug ?? 0) + (newCode ?? 0);
 
     const isBothEvaluated = newDebug !== null && newCode !== null;
     const evalStatus: EvaluationStatus = isBothEvaluated

@@ -14,17 +14,51 @@ import {
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { useCompetition } from '../../context/CompetitionContext';
 import { MOCK_TEAMS } from '../../data/mock-teams';
+import { db } from '../../firebase/config';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Evaluation() {
   const { teamId = 'CRL-0000' } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { getTeamEvaluation, updateTeamScores } = useCompetition();
 
-  const team = MOCK_TEAMS.find((t) => t.teamId === teamId) || {
-    teamId: teamId || 'CRL-0000',
-    teamName: 'Team Quantum Coders',
-    members: [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
-  };
+  const [teamInfo, setTeamInfo] = useState<{
+    teamId: string;
+    teamName: string;
+    members?: { name: string }[];
+  }>(() => {
+    const found = MOCK_TEAMS.find((t) => t.teamId === teamId);
+    return (
+      found || {
+        teamId: teamId || 'CRL-0000',
+        teamName: `Team ${teamId}`,
+        members: [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
+      }
+    );
+  });
+
+  useEffect(() => {
+    if (!teamId) return;
+    const unsub = onSnapshot(
+      doc(db, 'teams', teamId),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setTeamInfo({
+            teamId: d.teamId || teamId,
+            teamName: d.teamName || `Team ${teamId}`,
+            members: d.members || [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
+          });
+        }
+      },
+      (err) => {
+        console.warn('[Evaluation] Error fetching team doc:', err);
+      }
+    );
+    return () => unsub();
+  }, [teamId]);
+
+  const team = teamInfo;
 
   const teamEval = getTeamEvaluation(teamId);
 

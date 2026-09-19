@@ -48,6 +48,8 @@ export interface CompetitionContextValue {
 
   // Timer expired — called by Timer component
   onStrikeTimerExpired: () => void;
+  submitStrikeEarly: (strikeId: StrikeId) => Promise<void>;
+  isStrikeCompleted: (strikeId: StrikeId) => boolean;
 
   // Judge scoring action
   updateTeamScores: (
@@ -213,6 +215,13 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
     await dataProvider.resetRound();
     setSubmissions([]);
     setCarryForward({ debugQuestionIds: [] });
+    try {
+      Object.keys(sessionStorage).forEach((k) => {
+        if (k.startsWith('vr2_strike_')) sessionStorage.removeItem(k);
+      });
+    } catch {
+      // ignore
+    }
   }, []);
 
   // ---------- Timer expired ----------
@@ -233,6 +242,51 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ---------- Participant actions ----------
+  const isStrikeCompleted = useCallback(
+    (strikeId: StrikeId): boolean => {
+      const teamId = user?.team?.teamId;
+      if (!teamId) return false;
+      try {
+        if (sessionStorage.getItem(`vr2_strike_${strikeId}_completed_${teamId}`)) {
+          return true;
+        }
+      } catch {
+        // ignore
+      }
+      return submissions.some(
+        (s) => s.teamId === teamId && s.strikeId === strikeId && s.questionId === `${strikeId}_completion`
+      );
+    },
+    [user?.team?.teamId, submissions]
+  );
+
+  const submitStrikeEarly = useCallback(
+    async (strikeId: StrikeId) => {
+      const teamId = user?.team?.teamId;
+      if (!teamId) return;
+      const nowIso = new Date().toISOString();
+
+      try {
+        sessionStorage.setItem(`vr2_strike_${strikeId}_completed_${teamId}`, nowIso);
+      } catch {
+        // ignore
+      }
+
+      try {
+        await dataProvider.submitAnswer({
+          questionId: `${strikeId}_completion`,
+          teamId,
+          strikeId,
+          answer: JSON.stringify({ completedAt: nowIso, type: 'EARLY_COMPLETION' }),
+          status: 'submitted',
+        });
+      } catch (err) {
+        console.warn('[CompetitionContext] Early strike completion write notice:', err);
+      }
+    },
+    [user?.team?.teamId]
+  );
+
   const submitAnswer = useCallback(async (sub: Omit<Submission, 'submittedAt'>) => {
     await dataProvider.submitAnswer(sub);
     const nowIso = new Date().toISOString();
@@ -269,16 +323,33 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
 
   const getTeamTiming = useCallback(
     (teamId: string): StrikeTiming => {
+      const res = results.find((r) => r.teamId === teamId);
+      if (res?.timing) {
+        return res.timing;
+      }
       return dataProvider.getTeamTiming(teamId);
     },
-    []
+    [results]
   );
 
   const getTeamEvaluation = useCallback(
     (teamId: string) => {
+      const res = results.find((r) => r.teamId === teamId);
+      if (res) {
+        return {
+          predictScore: res.predictScore,
+          debugMarks: res.debugMarks,
+          codeMarks: res.codeMarks,
+          debugCodeTotal: res.debugCodeTotal ?? 0,
+          finalScore: res.finalScore,
+          status: (res.evaluationStatus === 'evaluated'
+            ? 'submitted'
+            : res.evaluationStatus) as 'pending' | 'in_progress' | 'submitted',
+        };
+      }
       return dataProvider.getTeamEvaluation(teamId);
     },
-    []
+    [results]
   );
 
   const updateTeamScores = useCallback(
@@ -312,6 +383,8 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
         organizerEmergencyLock,
         organizerResetRound,
         submitAnswer,
+        submitStrikeEarly,
+        isStrikeCompleted,
         isQuestionLocked,
         getSubmission,
         getTeamSubmissions,

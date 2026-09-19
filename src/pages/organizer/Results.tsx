@@ -53,9 +53,9 @@ export default function Results() {
       r.teamId,
       `"${r.teamName.replace(/"/g, '""')}"`,
       r.predictScore,
-      r.debugMarks !== null ? r.debugMarks : 'PENDING',
-      r.codeMarks !== null ? r.codeMarks : 'PENDING',
-      r.debugCodeTotal,
+      r.debugMarks !== null ? r.debugMarks : '—',
+      r.codeMarks !== null ? r.codeMarks : '—',
+      r.debugCodeTotal !== null ? r.debugCodeTotal : '—',
       r.finalScore,
       r.evaluationStatus.toUpperCase(),
       r.timing?.finalSubmittedAt ? new Date(r.timing.finalSubmittedAt).toISOString() : 'N/A',
@@ -276,26 +276,36 @@ export default function Results() {
                           {row.debugMarks !== null ? (
                             <span className="text-indigo-300 font-bold">{row.debugMarks}</span>
                           ) : (
-                            <span className="text-slate-600 italic">pending</span>
+                            <span className="text-slate-500 font-mono font-bold">—</span>
                           )}
                         </td>
                         <td className="px-4 py-4 text-right font-mono">
                           {row.codeMarks !== null ? (
                             <span className="text-purple-300 font-bold">{row.codeMarks}</span>
                           ) : (
-                            <span className="text-slate-600 italic">pending</span>
+                            <span className="text-slate-500 font-mono font-bold">—</span>
                           )}
                         </td>
-                        <td className="px-4 py-4 text-right font-mono font-semibold text-cyan-300">
-                          {row.debugCodeTotal}
+                        <td className="px-4 py-4 text-right font-mono font-semibold">
+                          {row.debugCodeTotal !== null ? (
+                            <span className="text-cyan-300">{row.debugCodeTotal}</span>
+                          ) : (
+                            <span className="text-slate-500 font-mono font-bold">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-right font-mono font-black text-lg text-white">
                           <span className="text-glow-cyan text-cyan-400">{row.finalScore}</span>
                         </td>
                         <td className="px-4 py-4 text-center font-mono text-xs text-slate-400">
                           <span className="flex items-center justify-center gap-1">
-                            <Timer className="w-3.5 h-3.5 text-slate-500" />
-                            {formatTimestamp(row.timing?.finalSubmittedAt)}
+                            {row.timing?.finalSubmittedAt ? (
+                              <>
+                                <Timer className="w-3.5 h-3.5 text-slate-500" />
+                                {formatTimestamp(row.timing.finalSubmittedAt)}
+                              </>
+                            ) : (
+                              <span className="text-slate-500 font-mono font-bold">—</span>
+                            )}
                           </span>
                         </td>
                         <td className="px-4 py-4 text-center">
