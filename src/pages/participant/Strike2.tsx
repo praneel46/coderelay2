@@ -7,7 +7,6 @@ import { useCompetition } from '../../context/CompetitionContext';
 import { useTimer } from '../../hooks/useTimer';
 import { MOCK_STRIKE2_QUESTIONS } from '../../data/mock-questions';
 import DebugQuestion from '../../components/competition/DebugQuestion';
-import StrikeCountdownOverlay from '../../components/competition/StrikeCountdownOverlay';
 import { useAntiCheat } from '../../hooks/useAntiCheat';
 import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 
@@ -96,12 +95,6 @@ export default function Strike2() {
     onAutoSubmit: handleAutoSubmit,
   });
 
-  const [showCountdown, setShowCountdown] = useState(() => {
-    if (!activeStrike?.startedAt) return false;
-    const diff = (Date.now() - new Date(activeStrike.startedAt).getTime()) / 1000;
-    return diff < 6;
-  });
-
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
       {/* Anti-Cheat Warning Modal */}
@@ -112,14 +105,6 @@ export default function Strike2() {
         onDismiss={dismissModal}
       />
 
-      {/* 5-second countdown banner on strike start */}
-      {showCountdown && (
-        <StrikeCountdownOverlay
-          strikeId="strike2"
-          durationSeconds={5}
-          onComplete={() => setShowCountdown(false)}
-        />
-      )}
 
       {/* Header */}
       <header className="border-b border-dark-700 bg-dark-900/90 backdrop-blur-sm px-4 sm:px-6 py-4 sticky top-0 z-20">

@@ -20,7 +20,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useCompetition } from '../../context/CompetitionContext';
 import { useTimer } from '../../hooks/useTimer';
 import { MOCK_STRIKE1_QUESTIONS } from '../../data/mock-questions';
-import StrikeCountdownOverlay from '../../components/competition/StrikeCountdownOverlay';
 import { useAntiCheat } from '../../hooks/useAntiCheat';
 import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 import type { Question, MCQOption } from '../../types/competition';
@@ -338,14 +337,6 @@ export default function Strike1() {
   const currentSubmission = getSubmission(activeQuestion.id);
   const isCurrentLocked = isQuestionLocked(activeQuestion.id);
   const isCurrentSubmitted = currentSubmission?.status === 'submitted';
-
-  const [showCountdown, setShowCountdown] = useState(() => {
-    // Show countdown if the strike was started recently (within 6 seconds)
-    if (!activeStrike?.startedAt) return false;
-    const diff = (Date.now() - new Date(activeStrike.startedAt).getTime()) / 1000;
-    return diff < 6;
-  });
-
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col">
       {/* Anti-Cheat Warning Modal */}
@@ -355,16 +346,6 @@ export default function Strike1() {
         isLockedOut={isLockedOut}
         onDismiss={dismissModal}
       />
-
-      {/* 5-second countdown banner on strike start */}
-      {showCountdown && (
-        <StrikeCountdownOverlay
-          strikeId="strike1"
-          durationSeconds={5}
-          onComplete={() => setShowCountdown(false)}
-        />
-      )}
-
       {/* ── Header ── */}
       <header className="border-b border-dark-700 bg-dark-900/90 backdrop-blur-sm px-4 sm:px-6 py-4 sticky top-0 z-20">
         <div className="max-w-5xl mx-auto flex items-center justify-between gap-4">
