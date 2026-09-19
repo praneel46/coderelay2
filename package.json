@@ -15,7 +15,8 @@
     "test:hardening": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-hardening-suite.mjs\"",
     "test:concurrency": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-40-teams-concurrency.mjs\"",
     "test:csv-import": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-csv-import-workflow.mjs\"",
-    "test:auth-flow": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-participant-auth-flow.mjs\""
+    "test:auth-flow": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-participant-auth-flow.mjs\"",
+    "test:manual-add": "npx firebase-tools emulators:exec --only firestore \"node scripts/test-manual-add-team.mjs\""
   },
   "dependencies": {
     "firebase": "^12.19.0",

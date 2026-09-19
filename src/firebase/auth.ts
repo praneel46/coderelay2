@@ -208,6 +208,9 @@ export async function signInParticipantWithCredentials(
   if (!accessCode || !accessCode.trim()) {
     throw new Error('Please enter your Access Code.');
   }
+  if (accessCode.trim().length < 6) {
+    throw new Error('Invalid Team ID or Access Code.');
+  }
 
   const email = `${normalizedTeamId.toLowerCase()}@coderelay.com`;
 

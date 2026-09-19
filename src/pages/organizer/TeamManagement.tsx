@@ -88,6 +88,7 @@ export default function TeamManagement() {
   const [editTarget, setEditTarget] = useState<string | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
+  const [sessionAccessCodes, setSessionAccessCodes] = useState<Map<string, string>>(new Map());
   const [singleTeamHandoff, setSingleTeamHandoff] = useState<{ teamId: string; accessCode: string } | null>(null);
   const [copiedSingleHandoff, setCopiedSingleHandoff] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
@@ -230,8 +231,8 @@ export default function TeamManagement() {
       // 3. Access Code validation
       if (!accessCode) {
         errors.push('Missing accessCode.');
-      } else if (accessCode.length < 4) {
-        errors.push('Access code must be at least 4 characters long.');
+      } else if (accessCode.length < 6) {
+        errors.push('Access code must be at least 6 characters long (Firebase Auth minimum).');
       }
 
       // 4. Member validation (exactly 3 required)
@@ -498,8 +499,13 @@ export default function TeamManagement() {
         setFormError('Access code is required for offline provisioning.');
         return;
       }
-      if (form.accessCode.trim().length < 4) {
-        setFormError('Access code must be at least 4 characters long.');
+      if (form.accessCode.trim().length < 6) {
+        setFormError('Access code must be at least 6 characters long (Firebase Auth minimum).');
+        return;
+      }
+      if (sessionAccessCodes.has(form.accessCode.trim())) {
+        const conflictTeam = sessionAccessCodes.get(form.accessCode.trim());
+        setFormError(`Duplicate access code detected. This code is already assigned to team ${conflictTeam}.`);
         return;
       }
     }
@@ -577,6 +583,7 @@ export default function TeamManagement() {
 
     // If adding a new team with an access code, display offline provisioning handoff banner
     if (!editTarget && savedAccessCode) {
+      setSessionAccessCodes((prev) => new Map(prev).set(savedAccessCode, normalizedId));
       setSingleTeamHandoff({
         teamId: normalizedId,
         accessCode: savedAccessCode,
@@ -1128,7 +1135,7 @@ CRL-0002,Neural Knights,CR-5002,Kavya Nair,Arjun Mehta,Ananya Sen</pre>
                     type="password"
                     value={form.accessCode}
                     onChange={(e) => setForm((p) => ({ ...p, accessCode: e.target.value }))}
-                    placeholder="Min 4 characters"
+                    placeholder="Min 6 characters (e.g. SEC49A)"
                     className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-slate-300 text-sm font-mono outline-none focus:border-cyan-600 transition-colors"
                   />
                   <span className="text-[10px] text-slate-500 font-mono mt-0.5 block">

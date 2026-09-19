@@ -100,8 +100,8 @@ function parseAndValidateCsv(content, existingTeams = []) {
     // 3. Access Code validation
     if (!accessCode) {
       errors.push('Missing accessCode.');
-    } else if (accessCode.length < 4) {
-      errors.push('Access code must be at least 4 characters long.');
+    } else if (accessCode.length < 6) {
+      errors.push('Access code must be at least 6 characters long (Firebase Auth minimum).');
     }
 
     // 4. Member validation (all 3 required)
@@ -382,14 +382,14 @@ TEAM-0001,InvalidFormat2,SEC222,Alice,Bob,Charlie`;
     }
   });
 
-  // Test 13: Missing or short accessCode (<4 chars)
-  await testCase('Row Validation: Missing or short accessCode (<4 chars) rejected', async () => {
+  // Test 13: Missing or short accessCode (<6 chars)
+  await testCase('Row Validation: Missing or short accessCode (<6 chars) rejected (e.g. mockk)', async () => {
     const csv = `teamId,teamName,accessCode,member1,member2,member3
 CRL-0001,TeamOne,,Alice,Bob,Charlie
-CRL-0002,TeamTwo,123,Dave,Eve,Frank`;
+CRL-0002,TeamTwo,mockk,Dave,Eve,Frank`;
     const res = parseAndValidateCsv(csv);
     if (res.isValid || res.invalidRows.length !== 2) {
-      throw new Error('Should have rejected missing or short access codes');
+      throw new Error('Should have rejected missing or short access codes (< 6 chars)');
     }
   });
 

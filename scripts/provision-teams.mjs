@@ -172,8 +172,8 @@ for (let i = 0; i < teamsList.length; i++) {
   if (!t.teamId || !/^CRL-\d{4}$/i.test(t.teamId.trim())) {
     validationErrors.push(`Row ${i + 1}: Invalid teamId "${t.teamId}". Expected format: CRL-XXXX`);
   }
-  if (!t.accessCode || t.accessCode.trim().length < 4) {
-    validationErrors.push(`Row ${i + 1} (${t.teamId}): Missing or too short accessCode.`);
+  if (!t.accessCode || t.accessCode.trim().length < 6) {
+    validationErrors.push(`Row ${i + 1} (${t.teamId}): Missing or too short accessCode (min 6 characters required by Firebase Auth).`);
   }
 }
 
