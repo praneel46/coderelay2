@@ -290,14 +290,19 @@ export default function Strike1() {
 
   const handleEarlySubmit = async () => {
     setShowEarlySubmitConfirm(false);
-    if (activeQuestion && selections[activeQuestion.id] && user?.team) {
-      await submitAnswer({
-        questionId: activeQuestion.id,
-        teamId: user.team.teamId,
-        strikeId: 'strike1',
-        answer: selections[activeQuestion.id],
-        status: 'submitted',
-      });
+    if (user?.team) {
+      for (const q of questions) {
+        const selected = selections[q.id];
+        if (selected) {
+          await submitAnswer({
+            questionId: q.id,
+            teamId: user.team.teamId,
+            strikeId: 'strike1',
+            answer: selected,
+            status: 'submitted',
+          });
+        }
+      }
     }
     await submitStrikeEarly('strike1');
     navigate('/participant/strike-complete', {
@@ -331,18 +336,23 @@ export default function Strike1() {
     });
   };
 
-  const handleAutoSubmit = useCallback(() => {
-    if (activeQuestion && selections[activeQuestion.id] && user?.team) {
-      submitAnswer({
-        questionId: activeQuestion.id,
-        teamId: user.team.teamId,
-        strikeId: 'strike1',
-        answer: selections[activeQuestion.id],
-        status: 'submitted',
-      });
+  const handleAutoSubmit = useCallback(async () => {
+    if (user?.team) {
+      for (const q of questions) {
+        const selected = selections[q.id];
+        if (selected) {
+          await submitAnswer({
+            questionId: q.id,
+            teamId: user.team.teamId,
+            strikeId: 'strike1',
+            answer: selected,
+            status: 'submitted',
+          });
+        }
+      }
     }
     handleTimerExpired();
-  }, [activeQuestion, selections, user, submitAnswer, handleTimerExpired]);
+  }, [questions, selections, user, submitAnswer, handleTimerExpired]);
 
   const {
     warningCount,

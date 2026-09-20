@@ -43,23 +43,29 @@ export default function Results() {
       'Debug+Code (/120)',
       'Final Score (/150)',
       'Status',
+      'Strike 1 Completed',
+      'Strike 2 Completed',
+      'Strike 3 Completed',
       'Final Submission Time',
       'Total Elapsed Seconds',
       'Tie Breaker Applied',
     ];
 
     const rows = results.map((r) => [
-      r.rank,
+      r.rank !== null ? r.rank : 'UNRANKED',
       r.teamId,
       `"${r.teamName.replace(/"/g, '""')}"`,
-      r.predictScore,
+      r.predictScore !== null ? r.predictScore : '—',
       r.debugMarks !== null ? r.debugMarks : '—',
       r.codeMarks !== null ? r.codeMarks : '—',
       r.debugCodeTotal !== null ? r.debugCodeTotal : '—',
-      r.finalScore,
+      r.finalScore !== null ? r.finalScore : '—',
       r.evaluationStatus.toUpperCase(),
-      r.timing?.finalSubmittedAt ? new Date(r.timing.finalSubmittedAt).toISOString() : 'N/A',
-      r.timing?.totalElapsedSeconds ?? 'N/A',
+      r.timing?.strike1CompletedAt ? new Date(r.timing.strike1CompletedAt).toISOString() : '—',
+      r.timing?.strike2CompletedAt ? new Date(r.timing.strike2CompletedAt).toISOString() : '—',
+      r.timing?.strike3CompletedAt ? new Date(r.timing.strike3CompletedAt).toISOString() : '—',
+      r.timing?.finalSubmittedAt ? new Date(r.timing.finalSubmittedAt).toISOString() : '—',
+      r.timing?.totalElapsedSeconds ?? '—',
       r.tieBreakerApplied ? 'YES' : 'NO',
     ]);
 
@@ -85,7 +91,14 @@ export default function Results() {
     return matchesSearch && matchesStatus;
   });
 
-  const getRankBadge = (rank: number) => {
+  const getRankBadge = (rank: number | null) => {
+    if (rank === null) {
+      return (
+        <span className="text-slate-500 font-mono text-[11px] font-semibold px-2 py-0.5 rounded bg-dark-800 border border-dark-700 tracking-wider">
+          UNRANKED
+        </span>
+      );
+    }
     if (rank === 1) {
       return (
         <span className="flex items-center gap-1 font-black text-yellow-400 font-mono text-base">
@@ -269,8 +282,12 @@ export default function Results() {
                         </td>
                         <td className="px-4 py-4 font-mono font-bold text-cyan-400">{row.teamId}</td>
                         <td className="px-4 py-4 text-white font-semibold">{row.teamName}</td>
-                        <td className="px-4 py-4 text-right font-mono text-slate-300">
-                          {row.predictScore}
+                        <td className="px-4 py-4 text-right font-mono">
+                          {row.predictScore !== null ? (
+                            <span className="text-slate-200 font-bold">{row.predictScore}</span>
+                          ) : (
+                            <span className="text-slate-500 font-mono font-bold">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-right font-mono">
                           {row.debugMarks !== null ? (
@@ -294,7 +311,11 @@ export default function Results() {
                           )}
                         </td>
                         <td className="px-4 py-4 text-right font-mono font-black text-lg text-white">
-                          <span className="text-glow-cyan text-cyan-400">{row.finalScore}</span>
+                          {row.finalScore !== null ? (
+                            <span className="text-glow-cyan text-cyan-400">{row.finalScore}</span>
+                          ) : (
+                            <span className="text-slate-500 font-mono font-bold text-base">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-4 text-center font-mono text-xs text-slate-400">
                           <span className="flex items-center justify-center gap-1">

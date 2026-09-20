@@ -18,6 +18,7 @@ import RoundControl from '../pages/organizer/RoundControl';
 import TeamManagement from '../pages/organizer/TeamManagement';
 import JudgeManagement from '../pages/organizer/JudgeManagement';
 import LiveMonitoring from '../pages/organizer/LiveMonitoring';
+import Submissions from '../pages/organizer/Submissions';
 import SessionManagement from '../pages/organizer/SessionManagement';
 import SystemStatus from '../pages/organizer/SystemStatus';
 import Results from '../pages/organizer/Results';
@@ -144,6 +145,14 @@ export default function AppRouter() {
           element={
             <ProtectedRoute allowedRole="organizer">
               <JudgeManagement />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/organizer/submissions"
+          element={
+            <ProtectedRoute allowedRole="organizer">
+              <Submissions />
             </ProtectedRoute>
           }
         />

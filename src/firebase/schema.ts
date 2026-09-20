@@ -123,13 +123,13 @@ export interface FirestoreSessionDoc {
 
 export interface FirestoreResultDoc {
   teamId: string;
-  rank: number;
+  rank?: number | null;
   teamName: string;
-  predictScore: number;
+  predictScore?: number | null;
   debugMarks: number | null;
   codeMarks: number | null;
   debugCodeTotal: number | null;
-  finalScore: number;
+  finalScore?: number | null;
   evaluationStatus: EvaluationStatus;
   timing: StrikeTiming;
   tieBreakerApplied: boolean;

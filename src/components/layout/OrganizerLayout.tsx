@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   ShieldCheck,
+  FileCheck2,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Round Control', path: '/organizer/round-control', icon: Zap },
   { label: 'Teams',         path: '/organizer/teams',         icon: Users },
   { label: 'Judges',        path: '/organizer/judges',        icon: GraduationCap },
+  { label: 'Submissions',   path: '/organizer/submissions',   icon: FileCheck2 },
   { label: 'Live Monitor',  path: '/organizer/monitor',       icon: Activity },
   { label: 'Sessions',      path: '/organizer/sessions',      icon: Layers },
   { label: 'System Status', path: '/organizer/system-status', icon: ServerCog },

@@ -14,14 +14,14 @@ export interface StrikeTiming {
 }
 
 export interface RankEntry {
-  rank: number;
+  rank: number | null;        // null when unranked (no submissions yet)
   teamId: string;
   teamName: string;
-  predictScore: number;     // out of 30
-  debugMarks: number | null; // out of 60 (null when pending)
-  codeMarks: number | null;  // out of 60 (null when pending)
+  predictScore: number | null; // out of 30 (null when not submitted)
+  debugMarks: number | null;   // out of 60 (null when pending)
+  codeMarks: number | null;    // out of 60 (null when pending)
   debugCodeTotal: number | null;   // debugMarks + codeMarks (null when neither evaluated)
-  finalScore: number;       // predictScore + debugCodeTotal
+  finalScore: number | null;   // predictScore + debugCodeTotal (null when unsubmitted)
   evaluationStatus: EvaluationStatus;
   timing: StrikeTiming;
   tieBreakerApplied?: boolean;

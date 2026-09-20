@@ -30,6 +30,11 @@ import type {
 import type { CompetitionState } from '../types/competition-state';
 import type { Submission } from '../types/competition';
 import type { RankEntry, EvaluationStatus } from '../types/results';
+import {
+  rankTeamsWithTieBreak,
+  calculatePredictScore,
+  extractStrikeTimings,
+} from '../services/submission-monitor';
 
 // ----------------------------------------------------------------
 // Collection References
@@ -94,6 +99,7 @@ export function subscribeToLeaderboard(
 ): Unsubscribe {
   let teamsMap = new Map<string, { teamId: string; teamName: string; status: string; round2Eligible?: boolean }>();
   let resultsMap = new Map<string, FirestoreResultDoc>();
+  let submissionsByTeam = new Map<string, Submission[]>();
 
   const rebuildLeaderboard = () => {
     // 1. Source population: ALL qualified Round 2 teams
@@ -109,14 +115,27 @@ export function subscribeToLeaderboard(
 
     const rawEntries = qualifiedTeams.map((team) => {
       const d = resultsMap.get(team.teamId);
-      const predictScore = d?.predictScore ?? 0;
+      const teamSubs = submissionsByTeam.get(team.teamId) || [];
+
+      // If predictScore is in results, use it; otherwise compute from submissions if available
+      let predictScore: number | null = typeof d?.predictScore === 'number' ? d.predictScore : null;
+      if ((predictScore === null || predictScore === 0) && teamSubs.length > 0) {
+        const computed = calculatePredictScore(teamSubs, null);
+        if (computed !== null) {
+          predictScore = computed;
+        }
+      }
+
       const debugMarks = d?.debugMarks ?? null;
       const codeMarks = d?.codeMarks ?? null;
       const debugCodeTotal =
         debugMarks !== null || codeMarks !== null
           ? (debugMarks ?? 0) + (codeMarks ?? 0)
           : null;
-      const finalScore = predictScore + (debugMarks ?? 0) + (codeMarks ?? 0);
+      const finalScore =
+        predictScore !== null || debugMarks !== null || codeMarks !== null
+          ? (predictScore ?? 0) + (debugMarks ?? 0) + (codeMarks ?? 0)
+          : null;
 
       let evaluationStatus: EvaluationStatus = 'pending';
       if (debugMarks !== null && codeMarks !== null) {
@@ -127,6 +146,8 @@ export function subscribeToLeaderboard(
         evaluationStatus = d.evaluationStatus;
       }
 
+      const timing = extractStrikeTimings(teamSubs, d?.timing);
+
       return {
         teamId: team.teamId,
         teamName: team.teamName || d?.teamName || `Team ${team.teamId}`,
@@ -136,41 +157,13 @@ export function subscribeToLeaderboard(
         debugCodeTotal,
         finalScore,
         evaluationStatus,
-        timing: d?.timing || {},
+        timing,
         tieBreakerApplied: false,
+        rank: null,
       };
     });
 
-    // Strict tie-breaker sorting:
-    // 1. Highest finalScore wins
-    // 2. Lowest totalElapsedSeconds wins tie-break (time NEVER deducts score)
-    // 3. Stable alphabetical teamId
-    rawEntries.sort((a, b) => {
-      if (b.finalScore !== a.finalScore) {
-        return b.finalScore - a.finalScore;
-      }
-      const timeA = a.timing?.finalSubmittedAt
-        ? new Date(a.timing.finalSubmittedAt).getTime()
-        : a.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
-      const timeB = b.timing?.finalSubmittedAt
-        ? new Date(b.timing.finalSubmittedAt).getTime()
-        : b.timing?.totalElapsedSeconds ?? Number.MAX_SAFE_INTEGER;
-      if (timeA !== timeB) {
-        return timeA - timeB;
-      }
-      return a.teamId.localeCompare(b.teamId);
-    });
-
-    const entries: RankEntry[] = rawEntries.map((entry, index, arr) => {
-      const isTiedWithPrev = index > 0 && arr[index - 1].finalScore === entry.finalScore;
-      const isTiedWithNext = index < arr.length - 1 && arr[index + 1].finalScore === entry.finalScore;
-      return {
-        ...entry,
-        rank: index + 1,
-        tieBreakerApplied: isTiedWithPrev || isTiedWithNext,
-      };
-    });
-
+    const entries = rankTeamsWithTieBreak(rawEntries);
     onUpdate(entries);
   };
 
@@ -183,8 +176,8 @@ export function subscribeToLeaderboard(
         teamsMap.set(docSnap.id, {
           teamId: d.teamId || docSnap.id,
           teamName: d.teamName || `Team ${docSnap.id}`,
-          status: d.status || 'QUALIFIED_FOR_ROUND_2',
-          round2Eligible: d.round2Eligible ?? true,
+          status: d.status,
+          round2Eligible: d.round2Eligible,
         });
       });
       rebuildLeaderboard();
@@ -210,9 +203,53 @@ export function subscribeToLeaderboard(
     }
   );
 
+  let unsubSubmissions = () => {};
+  try {
+    unsubSubmissions = onSnapshot(
+      collection(db, COLLECTIONS.SUBMISSIONS),
+      (snapshot) => {
+        submissionsByTeam = new Map();
+        snapshot.docs.forEach((docSnap) => {
+          const sData = docSnap.data();
+          const teamId = sData.teamId;
+          if (!teamId) return;
+          if (!submissionsByTeam.has(teamId)) {
+            submissionsByTeam.set(teamId, []);
+          }
+          let submittedAtIso = '';
+          if (sData.submittedAt?.toDate) {
+            submittedAtIso = sData.submittedAt.toDate().toISOString();
+          } else if (typeof sData.submittedAt === 'string') {
+            submittedAtIso = sData.submittedAt;
+          } else if (sData.clientSubmittedAt) {
+            submittedAtIso = sData.clientSubmittedAt;
+          } else {
+            submittedAtIso = new Date().toISOString();
+          }
+          submissionsByTeam.get(teamId)!.push({
+            questionId: sData.questionId || '',
+            teamId,
+            strikeId: sData.strikeId || 'strike1',
+            answer: sData.answer || '',
+            submittedAt: submittedAtIso,
+            status: sData.status || 'submitted',
+            isCarriedForward: sData.isCarriedForward,
+          });
+        });
+        rebuildLeaderboard();
+      },
+      () => {
+        // Expected and safe when called by participant due to Firestore security rules
+      }
+    );
+  } catch {
+    // ignore
+  }
+
   return () => {
     unsubTeams();
     unsubResults();
+    unsubSubmissions();
   };
 }
 

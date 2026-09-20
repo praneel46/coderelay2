@@ -83,10 +83,14 @@ const CompetitionContext = createContext<CompetitionContextValue | null>(null);
  * (Time is purely a ranking tie-breaker factor; NEVER deducted from marks).
  */
 export function rankTeamsWithTieBreak(entries: RankEntry[]): RankEntry[] {
-  const sorted = [...entries].sort((a, b) => {
+  // Separate scored entries vs unranked entries (finalScore === null)
+  const scored = entries.filter((e) => e.finalScore !== null);
+  const unranked = entries.filter((e) => e.finalScore === null);
+
+  scored.sort((a, b) => {
     // 1. Primary: Final score higher is better
     if (b.finalScore !== a.finalScore) {
-      return b.finalScore - a.finalScore;
+      return (b.finalScore ?? 0) - (a.finalScore ?? 0);
     }
 
     // 2. Secondary: Time tie-break (Earlier valid submission time ranks higher)
@@ -108,8 +112,9 @@ export function rankTeamsWithTieBreak(entries: RankEntry[]): RankEntry[] {
     return a.teamId.localeCompare(b.teamId);
   });
 
-  // Assign ranks & flag whether tie-breaker resolved identical scores
-  return sorted.map((entry, idx, arr) => {
+  unranked.sort((a, b) => a.teamId.localeCompare(b.teamId));
+
+  const rankedEntries: RankEntry[] = scored.map((entry, idx, arr) => {
     const prev = arr[idx - 1];
     const next = arr[idx + 1];
     const isTiedScore =
@@ -122,6 +127,14 @@ export function rankTeamsWithTieBreak(entries: RankEntry[]): RankEntry[] {
       tieBreakerApplied: !!isTiedScore,
     };
   });
+
+  const unrankedEntries: RankEntry[] = unranked.map((entry) => ({
+    ...entry,
+    rank: null,
+    tieBreakerApplied: false,
+  }));
+
+  return [...rankedEntries, ...unrankedEntries];
 }
 
 // ----------------------------------------------------------------
@@ -337,11 +350,11 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       const res = results.find((r) => r.teamId === teamId);
       if (res) {
         return {
-          predictScore: res.predictScore,
+          predictScore: res.predictScore ?? 0,
           debugMarks: res.debugMarks,
           codeMarks: res.codeMarks,
           debugCodeTotal: res.debugCodeTotal ?? 0,
-          finalScore: res.finalScore,
+          finalScore: res.finalScore ?? 0,
           status: (res.evaluationStatus === 'evaluated'
             ? 'submitted'
             : res.evaluationStatus) as 'pending' | 'in_progress' | 'submitted',

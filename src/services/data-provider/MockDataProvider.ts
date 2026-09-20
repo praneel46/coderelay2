@@ -307,7 +307,7 @@ export class MockDataProvider implements IDataProvider {
   getTeamEvaluation(teamId: string) {
     const currentResults = loadFromStorage<RankEntry[]>(RESULTS_KEY, MOCK_RESULTS);
     const fallback = currentResults.find((r) => r.teamId === teamId);
-    const predictScore = fallback ? fallback.predictScore : 24;
+    const predictScore = (fallback && typeof fallback.predictScore === 'number') ? fallback.predictScore : 24;
     const debugMarks = fallback?.debugMarks ?? null;
     const codeMarks = fallback?.codeMarks ?? null;
     return {
