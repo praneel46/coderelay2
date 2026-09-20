@@ -58,9 +58,65 @@ export default function Strike2() {
     onStrikeTimerExpired,
   } = useCompetition();
   const { phase, currentStrikeId, activeStrike } = competitionState;
+  const teamId = user?.team?.teamId;
   const [activeIdx, setActiveIdx] = useState(0);
   const [timerExpired, setTimerExpired] = useState(false);
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
+
+  // Authoritative independent Strike 2 timer resolution
+  const teamStrikeTimer = teamId ? competitionState.teamTimers?.[teamId]?.strike2 : undefined;
+  const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
+    // Priority A: Team-specific timer from Firestore if valid and in future
+    if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
+      return teamStrikeTimer.endsAt;
+    }
+    // Priority B: Global activeStrike if valid and in future
+    if (activeStrike?.strikeId === 'strike2' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
+      return activeStrike.endsAt;
+    }
+    // Priority C: Check sessionStorage for this team's Strike 2 timer
+    if (teamId) {
+      try {
+        const storedEnds = sessionStorage.getItem(`vr2_strike_strike2_ends_${teamId}`);
+        if (storedEnds && new Date(storedEnds).getTime() > Date.now()) {
+          return storedEnds;
+        }
+      } catch {}
+    }
+    // Priority D: If Strike 2 is active and team has NOT completed Strike 2, initialize authoritative 15m window
+    if (phase === 'active' && currentStrikeId === 'strike2') {
+      const freshEnds = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      if (teamId) {
+        try {
+          sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, freshEnds);
+          sessionStorage.setItem(`vr2_strike_strike2_started_${teamId}`, new Date().toISOString());
+        } catch {}
+      }
+      return freshEnds;
+    }
+    return null;
+  });
+
+  // Sync effectiveEndsAt whenever fresh authoritative timer is delivered
+  useEffect(() => {
+    if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
+      setEffectiveEndsAt(teamStrikeTimer.endsAt);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, teamStrikeTimer.endsAt); } catch {}
+      }
+    } else if (activeStrike?.strikeId === 'strike2' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
+      setEffectiveEndsAt(activeStrike.endsAt);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, activeStrike.endsAt); } catch {}
+      }
+    } else if (!effectiveEndsAt && phase === 'active' && currentStrikeId === 'strike2') {
+      const freshEnds = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      setEffectiveEndsAt(freshEnds);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, freshEnds); } catch {}
+      }
+    }
+  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, phase, currentStrikeId, teamId, effectiveEndsAt]);
 
   useEffect(() => {
     if (isStrikeCompleted('strike2')) {
@@ -140,7 +196,7 @@ export default function Strike2() {
             {user?.team && <p className="text-slate-500 text-xs font-mono mt-0.5">{user.team.teamId} · {user.team.teamName}</p>}
           </div>
           <div className="flex items-center gap-3">
-            <TimerBar endsAt={activeStrike?.endsAt} totalSeconds={15 * 60} onExpired={handleTimerExpired} />
+            <TimerBar endsAt={effectiveEndsAt} totalSeconds={15 * 60} onExpired={handleTimerExpired} />
             <button
               onClick={() => setShowEarlySubmitConfirm(true)}
               className="btn-primary text-xs font-mono font-bold uppercase tracking-wider px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 border border-indigo-400/30 flex items-center gap-1.5 shadow-sm"

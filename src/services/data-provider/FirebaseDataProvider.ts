@@ -79,48 +79,48 @@ export class FirebaseDataProvider implements IDataProvider {
     return subscribeToCompetitionState(onUpdate, onError);
   }
 
-  async startStrike(strikeId: StrikeId): Promise<void> {
+  async startStrike(strikeId: StrikeId, teamId?: string): Promise<void> {
     const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
     const compSnap = await getDoc(compRef);
     const currentData = compSnap.exists() ? compSnap.data() : null;
 
-    // Transition validation
-    if (strikeId === 'strike2') {
-      const completed: string[] = currentData?.completedStrikes || [];
-      if (!completed.includes('strike1')) {
-        throw new Error('Cannot start Strike 2 before Strike 1 is completed.');
-      }
-    }
-    if (strikeId === 'strike3') {
-      const completed: string[] = currentData?.completedStrikes || [];
-      if (!completed.includes('strike2')) {
-        throw new Error('Cannot start Strike 3 before Strike 2 is completed.');
-      }
-    }
+    // Filter out strikeId from completedStrikes so starting/restarting always works cleanly
+    const rawCompleted: string[] = currentData?.completedStrikes || [];
+    const completedStrikes = rawCompleted.filter((s) => s !== strikeId);
 
-    const durationSeconds = STRIKE_DURATIONS[strikeId] || 300;
+    const durationSeconds = STRIKE_DURATIONS[strikeId] || (strikeId === 'strike3' ? 1200 : strikeId === 'strike2' ? 900 : 300);
     const now = new Date();
     const startTime = now.toISOString();
     const endTime = new Date(now.getTime() + durationSeconds * 1000).toISOString();
     const actorUid = auth.currentUser?.uid || 'organizer';
 
-    await setDoc(
-      compRef,
-      {
-        roundId: 'round2',
-        currentStrikeId: strikeId,
-        phase: 'active',
-        status: strikeId.toUpperCase(),
-        startTime,
-        endTime,
+    const updatePayload: Record<string, any> = {
+      roundId: 'round2',
+      currentStrikeId: strikeId,
+      phase: 'active',
+      status: strikeId.toUpperCase(),
+      startTime,
+      endTime,
+      durationSeconds,
+      completedStrikes,
+      gracePeriodSeconds: 15,
+      globalLock: false,
+      updatedAt: startTime,
+      updatedBy: actorUid,
+      [`${strikeId}_startTime`]: startTime,
+      [`${strikeId}_endTime`]: endTime,
+      [`${strikeId}_durationSeconds`]: durationSeconds,
+    };
+
+    if (teamId) {
+      updatePayload[`teamTimers.${teamId}.${strikeId}`] = {
+        startedAt: startTime,
+        endsAt: endTime,
         durationSeconds,
-        gracePeriodSeconds: 15,
-        globalLock: false,
-        updatedAt: startTime,
-        updatedBy: actorUid,
-      },
-      { merge: true }
-    );
+      };
+    }
+
+    await setDoc(compRef, updatePayload, { merge: true });
 
     await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
       logId: `log_${Date.now()}`,
@@ -129,7 +129,7 @@ export class FirebaseDataProvider implements IDataProvider {
       role: 'organizer',
       action: 'START_STRIKE',
       target: strikeId,
-      metadata: { startTime, endTime, durationSeconds },
+      metadata: { startTime, endTime, durationSeconds, teamId: teamId || 'ALL' },
     });
   }
 
@@ -459,10 +459,11 @@ export class FirebaseDataProvider implements IDataProvider {
     }
 
     // 7. Construct and sanitize /results/{teamId} payload
+    // If the document already exists, omit immutable fields (teamId, assignedJudgeId, timing)
+    // so judge score saves adhere strictly to Security Rules !hasAny(['timing', 'teamId', 'assignedJudgeId'])
     const resultDocData = sanitizeForFirestore({
-      teamId: canonicalTeamId,
+      ...(existingResult ? {} : { teamId: canonicalTeamId, assignedJudgeId: authoritativeJudgeId }),
       teamName: scores.teamName || existingResult?.teamName || `Team ${canonicalTeamId}`,
-      assignedJudgeId: authoritativeJudgeId,
       predictScore: predict,
       predictScoreSource: predictSource,
       ...(overrideReason ? { predictOverrideReason: overrideReason } : {}),
@@ -473,7 +474,7 @@ export class FirebaseDataProvider implements IDataProvider {
       debugCodeTotal,
       finalScore,
       evaluationStatus,
-      timing: timingPayload,
+      ...(existingResult ? {} : { timing: timingPayload }),
       evaluatedAt: nowIso,
       ...(scores.debugMarks !== undefined ? { debugEvaluatedAt: nowIso } : {}),
       ...(scores.codeMarks !== undefined ? { codeEvaluatedAt: nowIso } : {}),

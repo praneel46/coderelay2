@@ -86,7 +86,7 @@ export class MockDataProvider implements IDataProvider {
     return () => window.removeEventListener('storage', handler);
   }
 
-  async startStrike(strikeId: StrikeId): Promise<void> {
+  async startStrike(strikeId: StrikeId, teamId?: string): Promise<void> {
     let newState: CompetitionState;
     if (strikeId === 'strike1') newState = createMockStrike1State();
     else if (strikeId === 'strike2') newState = createMockStrike2State();

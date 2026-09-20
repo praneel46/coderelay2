@@ -185,25 +185,46 @@ function StrikeCard({
               {h}:{m}:{s}
             </div>
             {expired && (
-              <p className="text-xs text-red-400 font-mono mt-1">Timer expired — end strike manually</p>
+              <p className="text-xs text-red-400 font-mono mt-1">Timer expired — end or restart strike</p>
             )}
           </div>
-          <button
-            onClick={() => onEnd(strikeId)}
-            className="btn-danger flex items-center gap-2"
-          >
-            <Square className="w-4 h-4" />
-            END {cfg.label}
-          </button>
+          <div className="flex items-center gap-2">
+            {expired && (
+              <button
+                onClick={() => onStart(strikeId)}
+                className="btn-ghost border border-dark-600 hover:border-cyan-500 text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 text-cyan-300"
+                title={`Start fresh timer window for ${cfg.label}`}
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+                RESTART TIMER
+              </button>
+            )}
+            <button
+              onClick={() => onEnd(strikeId)}
+              className="btn-danger flex items-center gap-2"
+            >
+              <Square className="w-4 h-4" />
+              END {cfg.label}
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Complete state: show timestamp */}
-      {isComplete && startedAt && (
-        <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
-          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-          Completed · Started at{' '}
-          {new Date(startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+      {/* Complete state: show timestamp and restart button */}
+      {isComplete && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
+            <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+            Completed{startedAt ? ` · Started at ${new Date(startedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}` : ''}
+          </div>
+          <button
+            onClick={() => onStart(strikeId)}
+            className="btn-ghost border border-dark-600 hover:border-slate-500 text-xs font-mono flex items-center gap-1.5 px-3 py-1.5 text-slate-300 hover:text-white"
+            title={`Restart or start a new timer for ${cfg.label}`}
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-cyan-400" />
+            RESTART / NEW TIMER
+          </button>
         </div>
       )}
 
@@ -257,14 +278,9 @@ export default function RoundControl() {
 
   // Determine which strikes are startable
   function canStart(strikeId: StrikeId): boolean {
-    const idx = STRIKE_ORDER.indexOf(strikeId);
-    if (completedStrikes.includes(strikeId)) return false;
     if (currentStrikeId === strikeId && phase === 'active') return false;
-    if (idx === 0) return phase === 'waiting' || phase === 'complete';
-    // For strike2: strike1 must be complete
-    // For strike3: strike2 must be complete
-    const prevStrike = STRIKE_ORDER[idx - 1];
-    return completedStrikes.includes(prevStrike) && phase !== 'active';
+    // Organizer can start or restart any strike without being blocked by previous team runs
+    return true;
   }
 
   function isNext(strikeId: StrikeId): boolean {

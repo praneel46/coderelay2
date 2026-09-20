@@ -126,7 +126,7 @@ export default function TeamSubmissions() {
     } catch (err: any) {
       console.error('[TeamSubmissions] Save Debug failed:', err);
       setDebugSaveStatus('error');
-      setSaveError(err.message || 'Failed to save Debug score. Please check your assignment permissions.');
+      setSaveError(`[${err.code || 'error'}] ${err.message || 'Failed to save Debug score. Please check your assignment permissions.'}`);
     }
   };
 
@@ -147,7 +147,7 @@ export default function TeamSubmissions() {
     } catch (err: any) {
       console.error('[TeamSubmissions] Save Code failed:', err);
       setCodeSaveStatus('error');
-      setSaveError(err.message || 'Failed to save Code score. Please check your assignment permissions.');
+      setSaveError(`[${err.code || 'error'}] ${err.message || 'Failed to save Code score. Please check your assignment permissions.'}`);
     }
   };
 

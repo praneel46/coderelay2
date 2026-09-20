@@ -70,4 +70,6 @@ export interface CompetitionState {
   globalLock: boolean;
   /** ISO timestamp of last organizer action */
   lastUpdatedAt: string;
+  /** Independent per-team strike timers */
+  teamTimers?: Record<string, Partial<Record<StrikeId, { startedAt: string; endsAt: string; durationSeconds: number }>>>;
 }

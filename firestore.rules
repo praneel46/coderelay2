@@ -35,8 +35,14 @@ service cloud.firestore {
     }
 
     function currentJudgeId() {
-      return request.auth.token.get('judgeId', '') != '' ?
-        request.auth.token.get('judgeId', '') :
+      let tid = request.auth.token.get('judgeId', '');
+      return tid != '' ?
+        (tid.lower() == 'j001' ? 'J001' :
+         tid.lower() == 'j002' ? 'J002' :
+         tid.lower() == 'j003' ? 'J003' :
+         tid.lower() == 'j004' ? 'J004' :
+         tid.lower() == 'j005' ? 'J005' :
+         tid.lower() == 'j006' ? 'J006' : tid) :
         (request.auth.token.get('email', '').lower() == 'judge1@coderelay.com' ? 'J001' :
          request.auth.token.get('email', '').lower() == 'judge2@coderelay.com' ? 'J002' :
          request.auth.token.get('email', '').lower() == 'judge3@coderelay.com' ? 'J003' :
@@ -46,10 +52,16 @@ service cloud.firestore {
     }
 
     function isJudgeAssignedToTeam(teamId) {
-      return isJudge() &&
-        currentJudgeId() != '' &&
-        exists(/databases/$(database)/documents/judges/$(currentJudgeId())) &&
-        teamId in get(/databases/$(database)/documents/judges/$(currentJudgeId())).data.assignedTeamIds;
+      let jid = currentJudgeId();
+      return isJudge() && jid != '' && (
+        (exists(/databases/$(database)/documents/judges/$(jid)) &&
+         (teamId in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds ||
+          teamId.lower() in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds)) ||
+        (exists(/databases/$(database)/documents/teams/$(teamId)) &&
+         get(/databases/$(database)/documents/teams/$(teamId)).data.get('assignedJudgeId', '').lower() == jid.lower()) ||
+        (exists(/databases/$(database)/documents/results/$(teamId)) &&
+         get(/databases/$(database)/documents/results/$(teamId)).data.get('assignedJudgeId', '').lower() == jid.lower())
+      );
     }
 
 
@@ -226,20 +238,16 @@ service cloud.firestore {
     match /evaluations/{evaluationId} {
       allow read: if isOrganizer() || (
         isJudge() &&
-        isJudgeAssignedToTeam(resource.data.teamId) &&
-        resource.data.judgeId == currentJudgeId()
+        isJudgeAssignedToTeam(resource.data.teamId)
       );
       allow create: if isOrganizer() || (
         isJudge() &&
-        isJudgeAssignedToTeam(request.resource.data.teamId) &&
-        request.resource.data.judgeId == currentJudgeId()
+        isJudgeAssignedToTeam(request.resource.data.teamId)
       );
       allow update: if isOrganizer() || (
         isJudge() &&
         isJudgeAssignedToTeam(resource.data.teamId) &&
-        isJudgeAssignedToTeam(request.resource.data.teamId) &&
-        resource.data.judgeId == currentJudgeId() &&
-        request.resource.data.judgeId == currentJudgeId()
+        isJudgeAssignedToTeam(request.resource.data.teamId)
       );
       allow delete: if isOrganizer();
     }
@@ -249,7 +257,7 @@ service cloud.firestore {
     // Leaderboard entries are readable by all authenticated users.
     // Organizers retain full administrative correction authority.
     // Judges can ONLY write scores within assigned teams and CANNOT
-    // modify timing or reassign judges. Participants CANNOT write.
+    // modify timing, teamId, or reassign judges. Participants CANNOT write.
     // ------------------------------------------------------------
     match /results/{teamId} {
       allow read: if isAuthenticated();
@@ -262,16 +270,7 @@ service cloud.firestore {
       allow update: if isOrganizer() || (
         isJudgeAssignedToTeam(teamId) &&
         request.resource.data.teamId == resource.data.teamId &&
-        (
-          !('assignedJudgeId' in resource.data) ||
-          !('assignedJudgeId' in request.resource.data) ||
-          request.resource.data.assignedJudgeId == resource.data.assignedJudgeId
-        ) &&
-        (
-          !('timing' in resource.data) ||
-          !('timing' in request.resource.data) ||
-          request.resource.data.timing == resource.data.timing
-        ) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['timing', 'teamId', 'assignedJudgeId']) &&
         (
           request.resource.data.get('predictScore', null) == null ||
           (request.resource.data.predictScore is number &&

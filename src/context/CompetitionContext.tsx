@@ -34,7 +34,7 @@ export interface CompetitionContextValue {
   auditLogs: EvaluationAuditEntry[];
 
   // Organizer actions
-  organizerStartStrike: (strikeId: StrikeId) => Promise<void>;
+  organizerStartStrike: (strikeId: StrikeId, teamId?: string) => Promise<void>;
   organizerEndStrike: (strikeId: StrikeId) => Promise<void>;
   organizerPauseStrike: () => Promise<void>;
   organizerResumeStrike: () => Promise<void>;
@@ -208,8 +208,8 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   }, [competitionState.completedStrikes, submissions]);
 
   // ---------- Organizer actions ----------
-  const organizerStartStrike = useCallback(async (strikeId: StrikeId) => {
-    await dataProvider.startStrike(strikeId);
+  const organizerStartStrike = useCallback(async (strikeId: StrikeId, teamId?: string) => {
+    await dataProvider.startStrike(strikeId, teamId);
   }, []);
 
   const organizerEndStrike = useCallback(async (strikeId: StrikeId) => {

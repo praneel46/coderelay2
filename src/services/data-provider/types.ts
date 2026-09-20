@@ -20,7 +20,7 @@ export interface IDataProvider {
 
   // Competition State
   subscribeCompetitionState(onUpdate: (state: CompetitionState) => void, onError?: (err: Error) => void): () => void;
-  startStrike(strikeId: StrikeId): Promise<void>;
+  startStrike(strikeId: StrikeId, teamId?: string): Promise<void>;
   endStrike(strikeId: StrikeId): Promise<void>;
   pauseCompetition(): Promise<void>;
   resumeCompetition(): Promise<void>;

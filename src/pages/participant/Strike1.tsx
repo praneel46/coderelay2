@@ -255,10 +255,66 @@ export default function Strike1() {
   } = useCompetition();
 
   const { phase, currentStrikeId, activeStrike } = competitionState;
+  const teamId = user?.team?.teamId;
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [timerExpired, setTimerExpired] = useState(false);
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
+
+  // Authoritative independent Strike 1 timer resolution
+  const teamStrikeTimer = teamId ? competitionState.teamTimers?.[teamId]?.strike1 : undefined;
+  const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
+    // Priority A: Team-specific timer from Firestore if valid and in future
+    if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
+      return teamStrikeTimer.endsAt;
+    }
+    // Priority B: Global activeStrike if valid and in future
+    if (activeStrike?.strikeId === 'strike1' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
+      return activeStrike.endsAt;
+    }
+    // Priority C: Check sessionStorage for this team's Strike 1 timer
+    if (teamId) {
+      try {
+        const storedEnds = sessionStorage.getItem(`vr2_strike_strike1_ends_${teamId}`);
+        if (storedEnds && new Date(storedEnds).getTime() > Date.now()) {
+          return storedEnds;
+        }
+      } catch {}
+    }
+    // Priority D: If Strike 1 is active and team has NOT completed Strike 1, initialize authoritative 5m window
+    if (phase === 'active' && currentStrikeId === 'strike1') {
+      const freshEnds = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      if (teamId) {
+        try {
+          sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, freshEnds);
+          sessionStorage.setItem(`vr2_strike_strike1_started_${teamId}`, new Date().toISOString());
+        } catch {}
+      }
+      return freshEnds;
+    }
+    return null;
+  });
+
+  // Sync effectiveEndsAt whenever fresh authoritative timer is delivered
+  useEffect(() => {
+    if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
+      setEffectiveEndsAt(teamStrikeTimer.endsAt);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, teamStrikeTimer.endsAt); } catch {}
+      }
+    } else if (activeStrike?.strikeId === 'strike1' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
+      setEffectiveEndsAt(activeStrike.endsAt);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, activeStrike.endsAt); } catch {}
+      }
+    } else if (!effectiveEndsAt && phase === 'active' && currentStrikeId === 'strike1') {
+      const freshEnds = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      setEffectiveEndsAt(freshEnds);
+      if (teamId) {
+        try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, freshEnds); } catch {}
+      }
+    }
+  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, phase, currentStrikeId, teamId, effectiveEndsAt]);
 
   // ── Guard: strike already completed or wrong phase → waiting room ──
   useEffect(() => {
@@ -413,7 +469,7 @@ export default function Strike1() {
           {/* Right: timer + early submit + logout */}
           <div className="flex items-center gap-3">
             <TimerBar
-              endsAt={activeStrike?.endsAt}
+              endsAt={effectiveEndsAt}
               totalSeconds={5 * 60}
               onExpired={handleTimerExpired}
             />

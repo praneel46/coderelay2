@@ -78,6 +78,7 @@ export function subscribeToCompetitionState(
           completedStrikes: data.completedStrikes || [],
           globalLock: data.globalLock || false,
           lastUpdatedAt: data.updatedAt || new Date().toISOString(),
+          teamTimers: (data as any).teamTimers || {},
         });
       }
     },
