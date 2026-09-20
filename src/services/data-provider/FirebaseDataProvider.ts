@@ -6,7 +6,7 @@
 // ============================================================
 
 import type { IDataProvider } from './types';
-import type { CompetitionState } from '../../types/competition-state';
+import type { CompetitionState, TeamTimerDoc, TeamStrikeStatus } from '../../types/competition-state';
 import type { Submission, StrikeId } from '../../types/competition';
 import type { RankEntry, StrikeTiming, EvaluationStatus } from '../../types/results';
 import type { EvaluationAuditEntry } from '../../types/judge';
@@ -31,6 +31,8 @@ import {
   doc,
   setDoc,
   getDoc,
+  getDocs,
+  updateDoc,
   addDoc,
   collection,
   onSnapshot,
@@ -79,20 +81,97 @@ export class FirebaseDataProvider implements IDataProvider {
     return subscribeToCompetitionState(onUpdate, onError);
   }
 
-  async startStrike(strikeId: StrikeId, teamId?: string): Promise<void> {
-    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
-    const compSnap = await getDoc(compRef);
-    const currentData = compSnap.exists() ? compSnap.data() : null;
-
-    // Filter out strikeId from completedStrikes so starting/restarting always works cleanly
-    const rawCompleted: string[] = currentData?.completedStrikes || [];
-    const completedStrikes = rawCompleted.filter((s) => s !== strikeId);
-
+  async startStrike(strikeId: StrikeId, teamId?: string, forceRestart = false): Promise<void> {
     const durationSeconds = STRIKE_DURATIONS[strikeId] || (strikeId === 'strike3' ? 1200 : strikeId === 'strike2' ? 900 : 300);
     const now = new Date();
     const startTime = now.toISOString();
     const endTime = new Date(now.getTime() + durationSeconds * 1000).toISOString();
     const actorUid = auth.currentUser?.uid || 'organizer';
+
+    const startSingleTeam = async (rawId: string) => {
+      const canonicalId = (rawId || '').trim().toUpperCase();
+      if (!canonicalId) return;
+
+      const timerRef = doc(db, COLLECTIONS.TEAM_TIMERS, canonicalId);
+      const snap = await getDoc(timerRef);
+      const existing = snap.exists() ? (snap.data() as TeamTimerDoc) : null;
+
+      // Idempotency & double-click protection (Requirement 4 & 16)
+      const existingTimer = existing?.[strikeId];
+      if (
+        !forceRestart &&
+        existingTimer &&
+        existingTimer.status === 'active' &&
+        new Date(existingTimer.endsAt).getTime() > Date.now()
+      ) {
+        // Already active with future valid timer — return without overwriting!
+        return;
+      }
+
+      const completed = (existing?.completedStrikes || []).filter((s) => s !== strikeId);
+      if (strikeId === 'strike2' && !completed.includes('strike1')) {
+        completed.push('strike1');
+      }
+      if (strikeId === 'strike3') {
+        if (!completed.includes('strike1')) completed.push('strike1');
+        if (!completed.includes('strike2')) completed.push('strike2');
+      }
+
+      const statusMap: Record<StrikeId, TeamStrikeStatus> = {
+        strike1: 'STRIKE_1_ACTIVE',
+        strike2: 'STRIKE_2_ACTIVE',
+        strike3: 'STRIKE_3_ACTIVE',
+      };
+
+      const timerPayload: TeamTimerDoc = {
+        ...(existing || {}),
+        teamId: canonicalId,
+        status: statusMap[strikeId],
+        currentStrikeId: strikeId,
+        completedStrikes: completed,
+        [strikeId]: {
+          strikeId,
+          startedAt: startTime,
+          endsAt: endTime,
+          durationSeconds,
+          completedAt: null,
+          status: 'active',
+        },
+        updatedAt: startTime,
+        updatedBy: actorUid,
+      };
+
+      await setDoc(timerRef, timerPayload, { merge: true });
+    };
+
+    if (teamId) {
+      await startSingleTeam(teamId);
+    } else {
+      const teamsSnap = await getDocs(collection(db, COLLECTIONS.TEAMS));
+      const batchList: Promise<void>[] = [];
+      teamsSnap.docs.forEach((d) => {
+        const t = d.data();
+        const tId = t.teamId || d.id;
+        const statusUpper = (t.status || '').toUpperCase();
+        if (
+          t.round2Eligible === true ||
+          statusUpper === 'QUALIFIED_FOR_ROUND_2' ||
+          statusUpper === 'READY' ||
+          statusUpper === 'ACTIVE' ||
+          statusUpper === 'COMPLETED'
+        ) {
+          batchList.push(startSingleTeam(tId));
+        }
+      });
+      await Promise.all(batchList);
+    }
+
+    // Global competition/round2 update for general round coordination
+    const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
+    const compSnap = await getDoc(compRef);
+    const currentData = compSnap.exists() ? compSnap.data() : null;
+    const rawCompleted: string[] = currentData?.completedStrikes || [];
+    const completedStrikes = rawCompleted.filter((s) => s !== strikeId);
 
     const updatePayload: Record<string, any> = {
       roundId: 'round2',
@@ -113,7 +192,8 @@ export class FirebaseDataProvider implements IDataProvider {
     };
 
     if (teamId) {
-      updatePayload[`teamTimers.${teamId}.${strikeId}`] = {
+      const canonicalId = teamId.trim().toUpperCase();
+      updatePayload[`teamTimers.${canonicalId}.${strikeId}`] = {
         startedAt: startTime,
         endsAt: endTime,
         durationSeconds,
@@ -133,7 +213,42 @@ export class FirebaseDataProvider implements IDataProvider {
     });
   }
 
-  async endStrike(strikeId: StrikeId): Promise<void> {
+  async endStrike(strikeId: StrikeId, teamId?: string): Promise<void> {
+    const nowIso = new Date().toISOString();
+    const actorUid = auth.currentUser?.uid || 'organizer';
+
+    const endSingleTeam = async (rawId: string) => {
+      const canonicalId = (rawId || '').trim().toUpperCase();
+      const timerRef = doc(db, COLLECTIONS.TEAM_TIMERS, canonicalId);
+      const snap = await getDoc(timerRef);
+      if (!snap.exists()) return;
+      const data = snap.data() as TeamTimerDoc;
+      const completed = data.completedStrikes || [];
+      if (!completed.includes(strikeId)) completed.push(strikeId);
+
+      const statusMap: Record<StrikeId, TeamStrikeStatus> = {
+        strike1: 'STRIKE_1_COMPLETED',
+        strike2: 'STRIKE_2_COMPLETED',
+        strike3: 'ROUND_2_COMPLETE',
+      };
+
+      await updateDoc(timerRef, {
+        status: statusMap[strikeId],
+        completedStrikes: completed,
+        [`${strikeId}.status`]: 'completed',
+        [`${strikeId}.completedAt`]: nowIso,
+        updatedAt: nowIso,
+        updatedBy: actorUid,
+      });
+    };
+
+    if (teamId) {
+      await endSingleTeam(teamId);
+    } else {
+      const timersSnap = await getDocs(collection(db, COLLECTIONS.TEAM_TIMERS));
+      await Promise.all(timersSnap.docs.map((d) => endSingleTeam(d.id)));
+    }
+
     const compRef = doc(db, COLLECTIONS.COMPETITION, 'round2');
     const compSnap = await getDoc(compRef);
     const currentData = compSnap.exists() ? compSnap.data() : null;
@@ -143,13 +258,10 @@ export class FirebaseDataProvider implements IDataProvider {
       completedStrikes.push(strikeId);
     }
 
-    const nowIso = new Date().toISOString();
-    const actorUid = auth.currentUser?.uid || 'organizer';
-
     await setDoc(
       compRef,
       {
-        phase: 'complete',
+        phase: strikeId === 'strike3' ? 'finished' : 'complete',
         currentStrikeId: null,
         completedStrikes,
         updatedAt: nowIso,
@@ -165,6 +277,7 @@ export class FirebaseDataProvider implements IDataProvider {
       role: 'organizer',
       action: 'END_STRIKE',
       target: strikeId,
+      metadata: { teamId: teamId || 'ALL' },
     });
   }
 
@@ -360,7 +473,8 @@ export class FirebaseDataProvider implements IDataProvider {
       scores.judgeId ||
       existingEval?.judgeId ||
       existingResult?.assignedJudgeId ||
-      'J001';
+      auth.currentUser?.uid ||
+      '';
 
     const nowIso = new Date().toISOString();
 

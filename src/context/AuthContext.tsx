@@ -106,6 +106,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        Object.keys(sessionStorage).forEach((k) => {
+          if (k.startsWith('vr2_') || k.startsWith('crl_')) {
+            sessionStorage.removeItem(k);
+          }
+        });
+      }
+    } catch {}
     await dataProvider.logout();
     setUser(null);
   }, []);

@@ -36,11 +36,12 @@ export function useSessionHeartbeat() {
     const teamId = user.team?.teamId || 'PARTICIPANT';
     const userId = auth.currentUser?.uid || `user_${teamId.toLowerCase()}`;
 
-    // Deduplication across page refresh: check sessionStorage for existing session ID
-    let sessionId = sessionStorage.getItem('crl_participant_session_id');
+    // Deduplication across page refresh: check sessionStorage for existing session ID (strictly scoped by teamId)
+    const storageKey = `crl_participant_session_id_${teamId.toLowerCase()}`;
+    let sessionId = sessionStorage.getItem(storageKey);
     if (!sessionId) {
       sessionId = `sess_${teamId.toLowerCase()}_${Math.random().toString(36).substring(2, 9)}`;
-      sessionStorage.setItem('crl_participant_session_id', sessionId);
+      sessionStorage.setItem(storageKey, sessionId);
     }
 
     const sessionRef = doc(db, COLLECTIONS.SESSIONS, sessionId);

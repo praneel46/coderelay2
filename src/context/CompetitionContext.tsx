@@ -13,7 +13,7 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import type { CompetitionState } from '../types/competition-state';
+import type { CompetitionState, TeamTimerDoc } from '../types/competition-state';
 import type { Submission, StrikeId, CarryForwardState } from '../types/competition';
 import type { RankEntry, StrikeTiming } from '../types/results';
 import type { EvaluationAuditEntry } from '../types/judge';
@@ -22,20 +22,22 @@ import { MOCK_RESULTS } from '../data/mock-results';
 import { dataProvider } from '../services/data-provider';
 import { useAuth } from './AuthContext';
 import { useSessionHeartbeat } from '../hooks/useSessionHeartbeat';
+import { subscribeToTeamTimer } from '../firebase/firestore';
 
 // ----------------------------------------------------------------
 // Context value
 // ----------------------------------------------------------------
 export interface CompetitionContextValue {
   competitionState: CompetitionState;
+  teamTimerDoc: TeamTimerDoc | null;
   submissions: Submission[];
   carryForward: CarryForwardState;
   results: RankEntry[];
   auditLogs: EvaluationAuditEntry[];
 
   // Organizer actions
-  organizerStartStrike: (strikeId: StrikeId, teamId?: string) => Promise<void>;
-  organizerEndStrike: (strikeId: StrikeId) => Promise<void>;
+  organizerStartStrike: (strikeId: StrikeId, teamId?: string, forceRestart?: boolean) => Promise<void>;
+  organizerEndStrike: (strikeId: StrikeId, teamId?: string) => Promise<void>;
   organizerPauseStrike: () => Promise<void>;
   organizerResumeStrike: () => Promise<void>;
   organizerEmergencyLock: () => Promise<void>;
@@ -147,6 +149,7 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
   useSessionHeartbeat();
   const [competitionState, setCompetitionState] = useState<CompetitionState>(MOCK_INITIAL_STATE);
+  const [teamTimerDoc, setTeamTimerDoc] = useState<TeamTimerDoc | null>(null);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [carryForward, setCarryForward] = useState<CarryForwardState>({ debugQuestionIds: [] });
   const [results, setResults] = useState<RankEntry[]>(() => rankTeamsWithTieBreak(MOCK_RESULTS));
@@ -176,6 +179,28 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       }
     );
 
+    let unsubTeamTimer: (() => void) | undefined;
+    let unsubTeamSubs: (() => void) | undefined;
+
+    if (user?.team?.teamId) {
+      unsubTeamTimer = subscribeToTeamTimer(
+        user.team.teamId,
+        (tDoc) => {
+          setTeamTimerDoc(tDoc);
+        },
+        (err) => {
+          console.warn('[CompetitionContext] Team timer subscription notice:', err.message);
+        }
+      );
+
+      unsubTeamSubs = dataProvider.subscribeTeamSubmissions(
+        user.team.teamId,
+        (teamSubs) => {
+          setSubmissions(teamSubs);
+        }
+      );
+    }
+
     let unsubAudit: (() => void) | undefined;
     if (user?.role === 'organizer' || user?.isOrganizer) {
       unsubAudit = dataProvider.subscribeAuditLogs(
@@ -191,13 +216,20 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
     return () => {
       unsubComp();
       unsubLeaderboard();
+      if (unsubTeamTimer) unsubTeamTimer();
+      if (unsubTeamSubs) unsubTeamSubs();
       if (unsubAudit) unsubAudit();
     };
-  }, [isAuthenticated, user?.role, user?.isOrganizer]);
+  }, [isAuthenticated, user?.role, user?.isOrganizer, user?.team?.teamId]);
 
   // Compute carry-forward when strike2 completes
   useEffect(() => {
-    if (competitionState.completedStrikes.includes('strike2')) {
+    const isStrike2Done =
+      competitionState.completedStrikes.includes('strike2') ||
+      teamTimerDoc?.completedStrikes?.includes('strike2') ||
+      teamTimerDoc?.strike2?.status === 'completed';
+
+    if (isStrike2Done) {
       const submittedDebugIds = submissions
         .filter((s) => s.strikeId === 'strike2' && s.status === 'submitted')
         .map((s) => s.questionId);
@@ -205,15 +237,15 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       const unsubmittedIds = allDebugIds.filter((id) => !submittedDebugIds.includes(id));
       setCarryForward({ debugQuestionIds: unsubmittedIds });
     }
-  }, [competitionState.completedStrikes, submissions]);
+  }, [competitionState.completedStrikes, teamTimerDoc?.completedStrikes, teamTimerDoc?.strike2?.status, submissions]);
 
   // ---------- Organizer actions ----------
-  const organizerStartStrike = useCallback(async (strikeId: StrikeId, teamId?: string) => {
-    await dataProvider.startStrike(strikeId, teamId);
+  const organizerStartStrike = useCallback(async (strikeId: StrikeId, teamId?: string, forceRestart = false) => {
+    await dataProvider.startStrike(strikeId, teamId, forceRestart);
   }, []);
 
-  const organizerEndStrike = useCallback(async (strikeId: StrikeId) => {
-    await dataProvider.endStrike(strikeId);
+  const organizerEndStrike = useCallback(async (strikeId: StrikeId, teamId?: string) => {
+    await dataProvider.endStrike(strikeId, teamId);
   }, []);
 
   const organizerPauseStrike = useCallback(async () => {
@@ -263,6 +295,12 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
     (strikeId: StrikeId): boolean => {
       const teamId = user?.team?.teamId;
       if (!teamId) return false;
+      if (
+        teamTimerDoc?.completedStrikes?.includes(strikeId) ||
+        teamTimerDoc?.[strikeId]?.status === 'completed'
+      ) {
+        return true;
+      }
       try {
         if (sessionStorage.getItem(`vr2_strike_${strikeId}_completed_${teamId}`)) {
           return true;
@@ -274,7 +312,7 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
         (s) => s.teamId === teamId && s.strikeId === strikeId && s.questionId === `${strikeId}_completion`
       );
     },
-    [user?.team?.teamId, submissions]
+    [user?.team?.teamId, teamTimerDoc, submissions]
   );
 
   const submitStrikeEarly = useCallback(
@@ -287,6 +325,12 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
         sessionStorage.setItem(`vr2_strike_${strikeId}_completed_${teamId}`, nowIso);
       } catch {
         // ignore
+      }
+
+      try {
+        await dataProvider.endStrike(strikeId, teamId);
+      } catch (err) {
+        console.warn('[CompetitionContext] End strike call notice:', err);
       }
 
       try {
@@ -397,6 +441,7 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
     <CompetitionContext.Provider
       value={{
         competitionState,
+        teamTimerDoc,
         submissions,
         carryForward,
         results,

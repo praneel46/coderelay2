@@ -18,37 +18,17 @@ interface LiveViolation {
   details?: string;
 }
 
-const MOCK_DEVICE: Record<string, { type: string; icon: React.ElementType }> = {
-  'CRL-0000': { type: 'Desktop', icon: Monitor },
-  'CRL-0001': { type: 'Laptop', icon: Laptop },
-  'CRL-0002': { type: 'Desktop', icon: Monitor },
-  'CRL-0003': { type: 'Laptop', icon: Laptop },
-  'CRL-0004': { type: 'Mobile', icon: Smartphone },
-};
-
-const MOCK_CONNECTION_STATUS: Record<string, 'connected' | 'offline'> = {
-  'CRL-0000': 'connected',
-  'CRL-0001': 'connected',
-  'CRL-0002': 'offline',
-  'CRL-0003': 'connected',
-  'CRL-0004': 'connected',
-};
-
-const MOCK_HEARTBEAT: Record<string, number> = {
-  'CRL-0000': 5,
-  'CRL-0001': 12,
-  'CRL-0002': 0,
-  'CRL-0003': 8,
-  'CRL-0004': 3,
-};
-
-const MOCK_SUBMITTED_COUNT: Record<string, number> = {
-  'CRL-0000': 2,
-  'CRL-0001': 1,
-  'CRL-0002': 0,
-  'CRL-0003': 3,
-  'CRL-0004': 0,
-};
+function getDeviceMeta(deviceString?: string): { type: string; icon: React.ElementType } {
+  if (!deviceString) return { type: 'Desktop', icon: Monitor };
+  const lower = deviceString.toLowerCase();
+  if (lower.includes('mobile') || lower.includes('android') || lower.includes('iphone')) {
+    return { type: 'Mobile', icon: Smartphone };
+  }
+  if (lower.includes('laptop') || lower.includes('macbook')) {
+    return { type: 'Laptop', icon: Laptop };
+  }
+  return { type: 'Desktop', icon: Monitor };
+}
 
 type Filter = 'all' | 'connected' | 'offline';
 
@@ -58,6 +38,8 @@ export default function LiveMonitoring() {
   const [toast, setToast] = useState<string | null>(null);
   const [violations, setViolations] = useState<LiveViolation[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [sessionsMap, setSessionsMap] = useState<Map<string, { status: 'connected' | 'offline'; diffSec: number; device: string }>>(new Map());
+  const [submissionsCountMap, setSubmissionsCountMap] = useState<Map<string, number>>(new Map());
 
   // Subscribe to real-time teams collection from Firestore
   React.useEffect(() => {
@@ -134,11 +116,72 @@ export default function LiveMonitoring() {
     }
   }, []);
 
+  // Subscribe to real-time participant sessions from Firestore
+  React.useEffect(() => {
+    try {
+      const unsub = onSnapshot(
+        collection(db, 'sessions'),
+        (snapshot) => {
+          const map = new Map<string, { status: 'connected' | 'offline'; diffSec: number; device: string }>();
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            const tid = (data.teamId || '').toUpperCase();
+            if (!tid) return;
+            const lastActive = data.lastHeartbeat || data.createdAt || new Date().toISOString();
+            const diffSec = Math.max(0, Math.floor((Date.now() - new Date(lastActive).getTime()) / 1000));
+            const isOnline = data.status === 'active' && diffSec <= 90;
+            const existing = map.get(tid);
+            if (!existing || (isOnline && existing.status === 'offline') || (isOnline && diffSec < existing.diffSec)) {
+              map.set(tid, {
+                status: isOnline ? 'connected' : 'offline',
+                diffSec,
+                device: data.device || 'Desktop',
+              });
+            }
+          });
+          setSessionsMap(map);
+        },
+        (err) => console.warn('[LiveMonitoring] Sessions subscription error:', err)
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('[LiveMonitoring] Error establishing sessions listener:', e);
+    }
+  }, []);
+
+  // Subscribe to real-time submissions count per team from Firestore
+  React.useEffect(() => {
+    try {
+      const unsub = onSnapshot(
+        collection(db, 'submissions'),
+        (snapshot) => {
+          const countMap = new Map<string, number>();
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            const tid = (data.teamId || '').toUpperCase();
+            if (!tid) return;
+            if (data.status === 'submitted' && !data.questionId?.includes('_completion')) {
+              countMap.set(tid, (countMap.get(tid) || 0) + 1);
+            }
+          });
+          setSubmissionsCountMap(countMap);
+        },
+        (err) => console.warn('[LiveMonitoring] Submissions subscription error:', err)
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('[LiveMonitoring] Error establishing submissions listener:', e);
+    }
+  }, []);
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
   const filtered = teams.filter((t) => {
-    if (filter === 'connected') return MOCK_CONNECTION_STATUS[t.teamId] === 'connected';
-    if (filter === 'offline') return MOCK_CONNECTION_STATUS[t.teamId] === 'offline';
+    const canonicalId = t.teamId.toUpperCase();
+    const session = sessionsMap.get(canonicalId);
+    const conn = session?.status || 'offline';
+    if (filter === 'connected') return conn === 'connected';
+    if (filter === 'offline') return conn === 'offline';
     return true;
   });
 
@@ -244,10 +287,12 @@ export default function LiveMonitoring() {
         {/* Team cards grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((team) => {
-            const conn = MOCK_CONNECTION_STATUS[team.teamId];
-            const hb = MOCK_HEARTBEAT[team.teamId];
-            const submitted = MOCK_SUBMITTED_COUNT[team.teamId];
-            const device = MOCK_DEVICE[team.teamId] ?? { type: 'Desktop', icon: Monitor };
+            const canonicalId = team.teamId.toUpperCase();
+            const session = sessionsMap.get(canonicalId);
+            const conn = session?.status || 'offline';
+            const hb = session?.diffSec;
+            const submitted = submissionsCountMap.get(canonicalId) || 0;
+            const device = getDeviceMeta(session?.device);
             const DevIcon = device.icon;
             const isOnline = conn === 'connected';
             return (
@@ -278,7 +323,7 @@ export default function LiveMonitoring() {
                   </div>
                   <div className="bg-dark-900 rounded px-2 py-1.5">
                     <p className="text-slate-600 mb-0.5">Heartbeat</p>
-                    <p className={isOnline ? 'text-green-400' : 'text-slate-600'}>{isOnline ? `${hb}s ago` : 'No signal'}</p>
+                    <p className={isOnline ? 'text-green-400' : 'text-slate-600'}>{isOnline && hb !== undefined ? `${hb}s ago` : 'No signal'}</p>
                   </div>
                 </div>
 

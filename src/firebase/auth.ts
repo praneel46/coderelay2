@@ -14,7 +14,7 @@ import {
   type User,
   type IdTokenResult,
 } from 'firebase/auth';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { auth, db } from './config';
 import { COLLECTIONS } from './firestore';
 import type { AuthUser, AuthRole } from '../context/AuthContext';
@@ -134,43 +134,61 @@ export async function signInJudgeWithCredentials(
 
   if (normalized.includes('@')) {
     judgeEmail = normalized;
-    const match = JUDGE_ACCOUNTS[judgeEmail];
-    if (!match) {
-      throw new Error('ACCESS DENIED: Email is not an authorized judge account.');
-    }
   } else {
-    const match = JUDGE_ID_TO_ACCOUNT[judgeIdOrEmail.trim().toUpperCase()];
-    if (!match) {
-      throw new Error(`Invalid Judge ID: ${judgeIdOrEmail}. Authorized IDs are J001 through J006.`);
+    const upper = judgeIdOrEmail.trim().toUpperCase();
+    const match = JUDGE_ID_TO_ACCOUNT[upper];
+    if (match) {
+      judgeEmail = match.email;
+    } else {
+      try {
+        const jDoc = await getDoc(doc(db, COLLECTIONS.JUDGES, upper));
+        if (jDoc.exists() && jDoc.data().email) {
+          judgeEmail = jDoc.data().email.toLowerCase();
+        } else {
+          judgeEmail = `${upper.toLowerCase()}@coderelay.com`;
+        }
+      } catch {
+        judgeEmail = `${upper.toLowerCase()}@coderelay.com`;
+      }
     }
-    judgeEmail = match.email;
   }
 
   try {
     const cred = await signInWithEmailAndPassword(auth, judgeEmail, password);
     const userEmail = (cred.user.email || judgeEmail).toLowerCase();
     const account = JUDGE_ACCOUNTS[userEmail];
+    let resolvedJudgeId = account?.judgeId;
+    let judgeName = account?.name || 'Judge';
 
-    if (!account) {
-      await signOut(auth);
-      throw new Error('ACCESS DENIED: Authenticated account is not an authorized judge.');
-    }
-
-    // Verify against judges document if available
-    let judgeName = account.name;
     try {
-      const judgeDocRef = doc(db, COLLECTIONS.JUDGES, account.judgeId);
-      const judgeDoc = await getDoc(judgeDocRef);
-      if (judgeDoc.exists() && judgeDoc.data().name) {
-        judgeName = judgeDoc.data().name;
+      if (!resolvedJudgeId) {
+        const q = query(collection(db, COLLECTIONS.JUDGES), where('email', '==', userEmail));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const d = snap.docs[0].data();
+          resolvedJudgeId = d.judgeId || snap.docs[0].id;
+          judgeName = d.name || `Judge ${resolvedJudgeId}`;
+        }
+      } else {
+        const judgeDocRef = doc(db, COLLECTIONS.JUDGES, resolvedJudgeId);
+        const judgeDoc = await getDoc(judgeDocRef);
+        if (judgeDoc.exists() && judgeDoc.data().name) {
+          judgeName = judgeDoc.data().name;
+        }
       }
     } catch {
-      // Use fallback configured profile name
+      // Non-blocking
+    }
+
+    if (!resolvedJudgeId) {
+      const prefix = userEmail.split('@')[0];
+      const matchNum = prefix.match(/\d+/);
+      resolvedJudgeId = matchNum ? `J${matchNum[0].padStart(3, '0')}` : prefix.toUpperCase();
     }
 
     return {
       role: 'judge',
-      judgeId: account.judgeId,
+      judgeId: resolvedJudgeId,
       judgeName,
     };
   } catch (error: any) {

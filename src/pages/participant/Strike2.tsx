@@ -13,8 +13,19 @@ import { AntiCheatModal } from '../../components/competition/AntiCheatModal';
 // Inline timer bar
 function TimerBar({ endsAt, totalSeconds, onExpired }: { endsAt?: string | null; totalSeconds: number; onExpired: () => void }) {
   const { displayTime, timerState, progress } = useTimer(endsAt, totalSeconds, onExpired);
+
+  if (!endsAt) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+        <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+        <span className="text-xs font-mono font-bold tracking-wide text-amber-400">
+          WAITING FOR OFFICIAL TIMER
+        </span>
+      </div>
+    );
+  }
   const colorClass = timerState === 'timeup' ? 'timer-timeup' : timerState === 'warning' ? 'timer-warning' : 'timer-normal';
-  const barColor = timerState === 'timeup' ? 'bg-red-500' : timerState === 'warning' ? 'bg-yellow-500' : 'bg-cyan-500';
+  const barColor = timerState === 'timeup' ? 'bg-red-500' : timerState === 'warning' ? 'bg-yellow-500' : 'bg-indigo-500';
   return (
     <div className="flex items-center gap-3">
       <Clock className={`w-4 h-4 ${colorClass}`} />
@@ -50,6 +61,7 @@ export default function Strike2() {
   const { user, logout } = useAuth();
   const {
     competitionState,
+    teamTimerDoc,
     submitAnswer,
     submitStrikeEarly,
     isStrikeCompleted,
@@ -64,7 +76,7 @@ export default function Strike2() {
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
   // Authoritative independent Strike 2 timer resolution
-  const teamStrikeTimer = teamId ? competitionState.teamTimers?.[teamId]?.strike2 : undefined;
+  const teamStrikeTimer = teamTimerDoc?.strike2 || (teamId ? competitionState.teamTimers?.[teamId]?.strike2 : undefined);
   const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
     // Priority A: Team-specific timer from Firestore if valid and in future
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
@@ -83,17 +95,6 @@ export default function Strike2() {
         }
       } catch {}
     }
-    // Priority D: If Strike 2 is active and team has NOT completed Strike 2, initialize authoritative 15m window
-    if (phase === 'active' && currentStrikeId === 'strike2') {
-      const freshEnds = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      if (teamId) {
-        try {
-          sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, freshEnds);
-          sessionStorage.setItem(`vr2_strike_strike2_started_${teamId}`, new Date().toISOString());
-        } catch {}
-      }
-      return freshEnds;
-    }
     return null;
   });
 
@@ -109,14 +110,8 @@ export default function Strike2() {
       if (teamId) {
         try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, activeStrike.endsAt); } catch {}
       }
-    } else if (!effectiveEndsAt && phase === 'active' && currentStrikeId === 'strike2') {
-      const freshEnds = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-      setEffectiveEndsAt(freshEnds);
-      if (teamId) {
-        try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, freshEnds); } catch {}
-      }
     }
-  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, phase, currentStrikeId, teamId, effectiveEndsAt]);
+  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, teamId]);
 
   useEffect(() => {
     if (isStrikeCompleted('strike2')) {
@@ -148,7 +143,7 @@ export default function Strike2() {
   const submittedIds = new Set(questions.filter((q) => getSubmission(q.id)?.status === 'submitted').map((q) => q.id));
 
   const handleSubmit = (code: string) => {
-    if (!activeQuestion || !user?.team) return;
+    if (!activeQuestion || !user?.team || !effectiveEndsAt) return;
     submitAnswer({ questionId: activeQuestion.id, teamId: user.team.teamId, strikeId: 'strike2', answer: code, status: 'submitted' });
   };
 
@@ -259,7 +254,7 @@ export default function Strike2() {
                 question={activeQuestion}
                 submission={getSubmission(activeQuestion.id)}
                 onSubmit={handleSubmit}
-                isLocked={isQuestionLocked(activeQuestion.id) || timerExpired}
+                isLocked={isQuestionLocked(activeQuestion.id) || timerExpired || !effectiveEndsAt}
               />
             )}
           </motion.div>

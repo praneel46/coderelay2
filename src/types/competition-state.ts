@@ -73,3 +73,36 @@ export interface CompetitionState {
   /** Independent per-team strike timers */
   teamTimers?: Record<string, Partial<Record<StrikeId, { startedAt: string; endsAt: string; durationSeconds: number }>>>;
 }
+
+export type TeamStrikeStatus =
+  | 'WAITING'
+  | 'STRIKE_1_ACTIVE'
+  | 'STRIKE_1_COMPLETED'
+  | 'WAITING_STRIKE_2'
+  | 'STRIKE_2_ACTIVE'
+  | 'STRIKE_2_COMPLETED'
+  | 'WAITING_STRIKE_3'
+  | 'STRIKE_3_ACTIVE'
+  | 'STRIKE_3_COMPLETED'
+  | 'ROUND_2_COMPLETE';
+
+export interface TeamStrikeTimerData {
+  strikeId: StrikeId;
+  startedAt: string;
+  endsAt: string;
+  durationSeconds: number;
+  completedAt?: string | null;
+  status: 'active' | 'completed' | 'expired';
+}
+
+export interface TeamTimerDoc {
+  teamId: string;
+  status: TeamStrikeStatus;
+  currentStrikeId: StrikeId | null;
+  completedStrikes: StrikeId[];
+  strike1?: TeamStrikeTimerData;
+  strike2?: TeamStrikeTimerData;
+  strike3?: TeamStrikeTimerData;
+  updatedAt: string;
+  updatedBy: string;
+}

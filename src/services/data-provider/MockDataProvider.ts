@@ -86,17 +86,31 @@ export class MockDataProvider implements IDataProvider {
     return () => window.removeEventListener('storage', handler);
   }
 
-  async startStrike(strikeId: StrikeId, teamId?: string): Promise<void> {
+  async startStrike(strikeId: StrikeId, teamId?: string, _forceRestart = false): Promise<void> {
     let newState: CompetitionState;
     if (strikeId === 'strike1') newState = createMockStrike1State();
     else if (strikeId === 'strike2') newState = createMockStrike2State();
     else newState = createMockStrike3State();
 
+    if (teamId && newState.activeStrike) {
+      newState.teamTimers = {
+        ...(newState.teamTimers || {}),
+        [teamId]: {
+          ...(newState.teamTimers?.[teamId] || {}),
+          [strikeId]: {
+            startedAt: newState.activeStrike.startedAt,
+            endsAt: newState.activeStrike.endsAt,
+            durationSeconds: strikeId === 'strike3' ? 1200 : strikeId === 'strike2' ? 900 : 300,
+          },
+        },
+      };
+    }
+
     saveToStorage(COMP_STATE_KEY, newState);
     window.dispatchEvent(new StorageEvent('storage', { key: COMP_STATE_KEY, newValue: JSON.stringify(newState) }));
   }
 
-  async endStrike(strikeId: StrikeId): Promise<void> {
+  async endStrike(strikeId: StrikeId, _teamId?: string): Promise<void> {
     const current = loadFromStorage(COMP_STATE_KEY, MOCK_INITIAL_STATE);
     const nowIso = new Date().toISOString();
     const updated: CompetitionState = {

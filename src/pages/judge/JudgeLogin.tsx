@@ -1,17 +1,46 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Scale, Lock, ArrowRight, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { MOCK_JUDGES } from '../../data/mock-judges';
+import { db } from '../../firebase/config';
+import { collection, onSnapshot } from 'firebase/firestore';
 
 export default function JudgeLogin() {
   const navigate = useNavigate();
   const { loginAsJudge, user } = useAuth();
+  const [judgeList, setJudgeList] = useState<{ judgeId: string; name: string; email: string }[]>(MOCK_JUDGES);
   const [judgeId, setJudgeId] = useState('J001');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  // Subscribe to real-time judges from Firestore
+  useEffect(() => {
+    try {
+      const unsub = onSnapshot(collection(db, 'judges'), (snapshot) => {
+        if (!snapshot.empty) {
+          const fetched = snapshot.docs.map((d) => {
+            const data = d.data();
+            return {
+              judgeId: data.judgeId || d.id,
+              name: data.name || `Judge ${d.id}`,
+              email: data.email || `${d.id.toLowerCase()}@vigyantra.internal`,
+            };
+          });
+          fetched.sort((a, b) => a.judgeId.localeCompare(b.judgeId));
+          setJudgeList(fetched);
+          if (fetched.length > 0) {
+            setJudgeId((prev) => (fetched.some((j) => j.judgeId === prev) ? prev : fetched[0].judgeId));
+          }
+        }
+      });
+      return () => unsub();
+    } catch {
+      // fallback to MOCK_JUDGES
+    }
+  }, []);
 
   // If already logged in as judge, redirect
   React.useEffect(() => {
@@ -93,7 +122,7 @@ export default function JudgeLogin() {
                 }}
                 className="w-full px-3.5 py-2.5 bg-dark-950 border border-dark-600 rounded-lg text-slate-200 text-sm font-mono outline-none focus:border-emerald-500 transition-colors"
               >
-                {MOCK_JUDGES.map((j) => (
+                {judgeList.map((j) => (
                   <option key={j.judgeId} value={j.judgeId}>
                     {j.judgeId} — {j.name} ({j.email})
                   </option>
@@ -139,7 +168,7 @@ export default function JudgeLogin() {
 
           <div className="pt-2 border-t border-dark-800 text-center">
             <p className="text-[11px] font-mono text-slate-500">
-              Authorized Accounts: <span className="text-emerald-400">J001 to J006</span>
+              Authorized Accounts: <span className="text-emerald-400">Assigned Judge Credentials</span>
             </p>
           </div>
         </div>

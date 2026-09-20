@@ -25,7 +25,7 @@ import { useCompetition } from '../../context/CompetitionContext';
 import { useAuth } from '../../context/AuthContext';
 
 export default function TeamSubmissions() {
-  const { teamId = 'CRL-0000' } = useParams<{ teamId: string }>();
+  const { teamId = '' } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { getTeamEvaluation, updateTeamScores } = useCompetition();
   const { user } = useAuth();
@@ -156,8 +156,8 @@ export default function TeamSubmissions() {
     teamName: string;
     members: { name: string }[];
   }>(() => ({
-    teamId: teamId || 'CRL-0000',
-    teamName: teamId ? `Team ${teamId}` : 'Team CRL-0000',
+    teamId: teamId || '',
+    teamName: teamId ? `Team ${teamId}` : 'Team',
     members: [{ name: 'Member 1' }, { name: 'Member 2' }, { name: 'Member 3' }],
   }));
 

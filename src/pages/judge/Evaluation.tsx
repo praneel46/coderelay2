@@ -21,7 +21,7 @@ import { db } from '../../firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 
 export default function Evaluation() {
-  const { teamId = 'CRL-0000' } = useParams<{ teamId: string }>();
+  const { teamId = '' } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { getTeamEvaluation, updateTeamScores } = useCompetition();
   const { user } = useAuth();
@@ -31,8 +31,8 @@ export default function Evaluation() {
     teamName: string;
     members?: { name: string }[];
   }>(() => ({
-    teamId: teamId || 'CRL-0000',
-    teamName: teamId ? `Team ${teamId}` : 'Team CRL-0000',
+    teamId: teamId || '',
+    teamName: teamId ? `Team ${teamId}` : 'Team',
     members: [{ name: 'Member 1' }, { name: 'Member 2' }, { name: 'Member 3' }],
   }));
 

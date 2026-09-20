@@ -27,7 +27,7 @@ import type {
   FirestoreAuditLogDoc,
   FirestoreTeamDoc,
 } from './schema';
-import type { CompetitionState } from '../types/competition-state';
+import type { CompetitionState, TeamTimerDoc } from '../types/competition-state';
 import type { Submission } from '../types/competition';
 import type { RankEntry, EvaluationStatus } from '../types/results';
 import {
@@ -48,6 +48,7 @@ export const COLLECTIONS = {
   SESSIONS: 'sessions',
   RESULTS: 'results',
   AUDIT_LOGS: 'auditLogs',
+  TEAM_TIMERS: 'teamTimers',
 } as const;
 
 // ----------------------------------------------------------------
@@ -85,6 +86,33 @@ export function subscribeToCompetitionState(
     (err) => {
       if (onError) onError(err);
       else console.error('[Firestore] Competition state subscription error:', err);
+    }
+  );
+}
+
+// ----------------------------------------------------------------
+// Real-time Team-Specific Authoritative Timer Listener
+// ----------------------------------------------------------------
+export function subscribeToTeamTimer(
+  teamId: string,
+  onUpdate: (timerDoc: TeamTimerDoc | null) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  const canonicalTeamId = (teamId || '').trim().toUpperCase();
+  const timerRef = doc(db, COLLECTIONS.TEAM_TIMERS, canonicalTeamId);
+
+  return onSnapshot(
+    timerRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onUpdate(snapshot.data() as TeamTimerDoc);
+      } else {
+        onUpdate(null);
+      }
+    },
+    (err) => {
+      if (onError) onError(err);
+      else console.warn(`[Firestore] Timer subscription error for ${canonicalTeamId}:`, err);
     }
   );
 }
@@ -301,35 +329,47 @@ export async function saveSubmissionToFirestore(
   const submissionId = `${submission.teamId}_${submission.questionId}`;
   const subRef = doc(db, COLLECTIONS.SUBMISSIONS, submissionId);
 
-  // Read current competition state to compute timing audit metadata
+  // Read team's authoritative timer to compute timing audit metadata
   let officialDeadline: string | null = null;
   let withinOfficialDeadline = true;
   let acceptedViaNetworkBuffer = false;
 
   try {
-    const compSnap = await getDoc(doc(db, COLLECTIONS.COMPETITION, 'round2'));
-    if (compSnap.exists()) {
-      const compData = compSnap.data();
-      let startTimeMs = 0;
-      if (compData.startTime?.toDate) {
-        startTimeMs = compData.startTime.toDate().getTime();
-      } else if (compData.startTime) {
-        startTimeMs = new Date(compData.startTime).getTime();
-      }
-      const durationSecs =
-        compData.durationSeconds ||
-        (submission.strikeId === 'strike1' ? 300 : submission.strikeId === 'strike2' ? 900 : 1200);
+    const canonicalTeamId = (submission.teamId || '').trim().toUpperCase();
+    let teamStrikeTimer: { startedAt?: string; endsAt?: string; durationSeconds?: number } | null = null;
 
-      if (startTimeMs > 0) {
-        const deadlineMs = startTimeMs + durationSecs * 1000;
-        officialDeadline = new Date(deadlineMs).toISOString();
-        const now = Date.now();
-        withinOfficialDeadline = now <= deadlineMs;
-        acceptedViaNetworkBuffer = !withinOfficialDeadline;
+    // Check team's dedicated timer doc
+    const timerSnap = await getDoc(doc(db, COLLECTIONS.TEAM_TIMERS, canonicalTeamId));
+    if (timerSnap.exists()) {
+      const tData = timerSnap.data() as TeamTimerDoc;
+      teamStrikeTimer = tData[submission.strikeId] || null;
+    }
+
+    // Fallback to competition/round2 teamTimers map or global
+    if (!teamStrikeTimer) {
+      const compSnap = await getDoc(doc(db, COLLECTIONS.COMPETITION, 'round2'));
+      if (compSnap.exists()) {
+        const compData = compSnap.data();
+        teamStrikeTimer = compData.teamTimers?.[canonicalTeamId]?.[submission.strikeId] || null;
+        if (!teamStrikeTimer && compData.currentStrikeId === submission.strikeId) {
+          teamStrikeTimer = {
+            startedAt: compData.startTime,
+            endsAt: compData.endTime,
+            durationSeconds: compData.durationSeconds,
+          };
+        }
       }
     }
+
+    if (teamStrikeTimer?.endsAt) {
+      officialDeadline = teamStrikeTimer.endsAt;
+      const deadlineMs = new Date(teamStrikeTimer.endsAt).getTime();
+      const now = Date.now();
+      withinOfficialDeadline = now <= deadlineMs;
+      acceptedViaNetworkBuffer = !withinOfficialDeadline;
+    }
   } catch (err) {
-    console.warn('[Firestore] Could not calculate deadline metadata:', err);
+    console.warn('[Firestore] Could not calculate team deadline metadata:', err);
   }
 
   const payload: Omit<FirestoreSubmissionDoc, 'submittedAt'> & { submittedAt: unknown } = {

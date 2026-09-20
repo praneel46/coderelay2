@@ -15,40 +15,38 @@ service cloud.firestore {
         request.auth.token.get('isOrganizer', false) == true ||
         exists(/databases/$(database)/documents/organizers/$(request.auth.uid)) ||
         (request.auth.token.get('email', '') != '' &&
-         exists(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())) &&
-         get(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())).data.authorized == true)
+         (exists(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())) ?
+          get(/databases/$(database)/documents/authorized_organizer_emails/$(request.auth.token.get('email', '').lower())).data.get('authorized', false) == true : false))
       );
     }
 
     function isJudge() {
       return isAuthenticated() && (
         request.auth.token.get('role', '') == 'judge' ||
-        (request.auth.token.get('email', '') != '' && request.auth.token.get('email', '').lower() in [
-          'judge1@coderelay.com',
-          'judge2@coderelay.com',
-          'judge3@coderelay.com',
-          'judge4@coderelay.com',
-          'judge5@coderelay.com',
-          'judge6@coderelay.com'
-        ])
+        request.auth.token.get('judgeId', '') != '' ||
+        exists(/databases/$(database)/documents/judges/$(request.auth.uid)) ||
+        (request.auth.token.get('email', '') != '' &&
+         (exists(/databases/$(database)/documents/judges/$(currentJudgeId())) ||
+          request.auth.token.get('email', '').lower().matches('.*judge.*@coderelay[.]com') ||
+          request.auth.token.get('email', '').lower() in [
+            'judge1@coderelay.com', 'judge2@coderelay.com', 'judge3@coderelay.com',
+            'judge4@coderelay.com', 'judge5@coderelay.com', 'judge6@coderelay.com'
+          ]))
       );
     }
 
     function currentJudgeId() {
       let tid = request.auth.token.get('judgeId', '');
-      return tid != '' ?
-        (tid.lower() == 'j001' ? 'J001' :
-         tid.lower() == 'j002' ? 'J002' :
-         tid.lower() == 'j003' ? 'J003' :
-         tid.lower() == 'j004' ? 'J004' :
-         tid.lower() == 'j005' ? 'J005' :
-         tid.lower() == 'j006' ? 'J006' : tid) :
-        (request.auth.token.get('email', '').lower() == 'judge1@coderelay.com' ? 'J001' :
-         request.auth.token.get('email', '').lower() == 'judge2@coderelay.com' ? 'J002' :
-         request.auth.token.get('email', '').lower() == 'judge3@coderelay.com' ? 'J003' :
-         request.auth.token.get('email', '').lower() == 'judge4@coderelay.com' ? 'J004' :
-         request.auth.token.get('email', '').lower() == 'judge5@coderelay.com' ? 'J005' :
-         request.auth.token.get('email', '').lower() == 'judge6@coderelay.com' ? 'J006' : '');
+      return tid != '' ? tid.upper() :
+        (exists(/databases/$(database)/documents/judges/$(request.auth.uid)) ?
+         get(/databases/$(database)/documents/judges/$(request.auth.uid)).data.get('judgeId', request.auth.uid).upper() :
+         (request.auth.token.get('email', '').lower() == 'judge1@coderelay.com' ? 'J001' :
+          request.auth.token.get('email', '').lower() == 'judge2@coderelay.com' ? 'J002' :
+          request.auth.token.get('email', '').lower() == 'judge3@coderelay.com' ? 'J003' :
+          request.auth.token.get('email', '').lower() == 'judge4@coderelay.com' ? 'J004' :
+          request.auth.token.get('email', '').lower() == 'judge5@coderelay.com' ? 'J005' :
+          request.auth.token.get('email', '').lower() == 'judge6@coderelay.com' ? 'J006' :
+          request.auth.uid));
     }
 
     function isJudgeAssignedToTeam(teamId) {
@@ -56,7 +54,8 @@ service cloud.firestore {
       return isJudge() && jid != '' && (
         (exists(/databases/$(database)/documents/judges/$(jid)) &&
          (teamId in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds ||
-          teamId.lower() in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds)) ||
+          teamId.lower() in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds ||
+          teamId.upper() in get(/databases/$(database)/documents/judges/$(jid)).data.assignedTeamIds)) ||
         (exists(/databases/$(database)/documents/teams/$(teamId)) &&
          get(/databases/$(database)/documents/teams/$(teamId)).data.get('assignedJudgeId', '').lower() == jid.lower()) ||
         (exists(/databases/$(database)/documents/results/$(teamId)) &&
@@ -98,6 +97,37 @@ service cloud.firestore {
     match /competition/{roundId} {
       allow read: if isAuthenticated();
       allow write: if isOrganizer();
+    }
+
+    // ------------------------------------------------------------
+    // Team-Specific Authoritative Timers (/teamTimers/{teamId})
+    // Each team has an independently addressable timer and strike status.
+    // Organizers have authoritative write control (create, start, restart).
+    // Participants can read their team's timer, and update completion status on early submit.
+    // Participants CANNOT mutate endsAt, startedAt, durationSeconds, or other teams' timers.
+    // ------------------------------------------------------------
+    match /teamTimers/{teamId} {
+      allow read: if isAuthenticated();
+      allow create, delete: if isOrganizer();
+      allow update: if isOrganizer() || (
+        isTeamMember(teamId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamId']) &&
+        (
+          !('strike1' in resource.data) || !('strike1' in request.resource.data) ||
+          (request.resource.data.strike1.endsAt == resource.data.strike1.endsAt &&
+           request.resource.data.strike1.durationSeconds == resource.data.strike1.durationSeconds)
+        ) &&
+        (
+          !('strike2' in resource.data) || !('strike2' in request.resource.data) ||
+          (request.resource.data.strike2.endsAt == resource.data.strike2.endsAt &&
+           request.resource.data.strike2.durationSeconds == resource.data.strike2.durationSeconds)
+        ) &&
+        (
+          !('strike3' in resource.data) || !('strike3' in request.resource.data) ||
+          (request.resource.data.strike3.endsAt == resource.data.strike3.endsAt &&
+           request.resource.data.strike3.durationSeconds == resource.data.strike3.durationSeconds)
+        )
+      );
     }
 
     // ------------------------------------------------------------

@@ -36,6 +36,17 @@ interface TimerBarProps {
 function TimerBar({ endsAt, totalSeconds, onExpired }: TimerBarProps) {
   const { displayTime, timerState, progress } = useTimer(endsAt, totalSeconds, onExpired);
 
+  if (!endsAt) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+        <Clock className="w-4 h-4 text-amber-400 animate-pulse" />
+        <span className="text-xs font-mono font-bold tracking-wide text-amber-400">
+          WAITING FOR OFFICIAL TIMER
+        </span>
+      </div>
+    );
+  }
+
   const colorClass =
     timerState === 'timeup'
       ? 'timer-timeup'
@@ -123,6 +134,7 @@ interface MCQQuestionProps {
   isLocked: boolean;
   isSubmitted: boolean;
   isExpired: boolean;
+  isWaitingForTimer?: boolean;
 }
 
 function MCQQuestion({
@@ -133,8 +145,9 @@ function MCQQuestion({
   isLocked,
   isSubmitted,
   isExpired,
+  isWaitingForTimer,
 }: MCQQuestionProps) {
-  const effectiveLocked = isLocked || isExpired;
+  const effectiveLocked = isLocked || isExpired || !!isWaitingForTimer;
   const options: MCQOption[] = question.options ?? [];
 
   return (
@@ -153,7 +166,8 @@ function MCQQuestion({
               </span>
             )}
             {isSubmitted && <span className="badge-submitted">Submitted</span>}
-            {isLocked && !isSubmitted && !isExpired && <span className="badge-locked">Locked</span>}
+            {isLocked && !isSubmitted && !isExpired && !isWaitingForTimer && <span className="badge-locked">Locked</span>}
+            {isWaitingForTimer && !isSubmitted && <span className="badge-locked bg-amber-500/10 text-amber-400 border-amber-500/30">Timer Pending</span>}
             {isExpired && !isSubmitted && <span className="badge-locked">Time Up</span>}
           </div>
           <h3 className="text-white font-bold text-lg">{question.title}</h3>
@@ -228,6 +242,12 @@ function MCQQuestion({
           <p className="text-green-400 text-sm font-mono">Answer submitted successfully.</p>
         </div>
       )}
+      {isWaitingForTimer && !isSubmitted && (
+        <div className="flex items-center gap-2 pt-2">
+          <AlertTriangle className="w-4 h-4 text-amber-400 animate-pulse" />
+          <p className="text-amber-400 text-sm font-mono">Waiting for official timer before submissions open.</p>
+        </div>
+      )}
       {isExpired && !isSubmitted && (
         <div className="flex items-center gap-2 pt-2">
           <AlertTriangle className="w-4 h-4 text-red-400" />
@@ -246,6 +266,7 @@ export default function Strike1() {
   const { user, logout } = useAuth();
   const {
     competitionState,
+    teamTimerDoc,
     submitAnswer,
     submitStrikeEarly,
     isStrikeCompleted,
@@ -262,7 +283,7 @@ export default function Strike1() {
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
   // Authoritative independent Strike 1 timer resolution
-  const teamStrikeTimer = teamId ? competitionState.teamTimers?.[teamId]?.strike1 : undefined;
+  const teamStrikeTimer = teamTimerDoc?.strike1 || (teamId ? competitionState.teamTimers?.[teamId]?.strike1 : undefined);
   const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
     // Priority A: Team-specific timer from Firestore if valid and in future
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
@@ -281,17 +302,6 @@ export default function Strike1() {
         }
       } catch {}
     }
-    // Priority D: If Strike 1 is active and team has NOT completed Strike 1, initialize authoritative 5m window
-    if (phase === 'active' && currentStrikeId === 'strike1') {
-      const freshEnds = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      if (teamId) {
-        try {
-          sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, freshEnds);
-          sessionStorage.setItem(`vr2_strike_strike1_started_${teamId}`, new Date().toISOString());
-        } catch {}
-      }
-      return freshEnds;
-    }
     return null;
   });
 
@@ -307,14 +317,8 @@ export default function Strike1() {
       if (teamId) {
         try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, activeStrike.endsAt); } catch {}
       }
-    } else if (!effectiveEndsAt && phase === 'active' && currentStrikeId === 'strike1') {
-      const freshEnds = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-      setEffectiveEndsAt(freshEnds);
-      if (teamId) {
-        try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, freshEnds); } catch {}
-      }
     }
-  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, phase, currentStrikeId, teamId, effectiveEndsAt]);
+  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, teamId]);
 
   // ── Guard: strike already completed or wrong phase → waiting room ──
   useEffect(() => {
@@ -565,6 +569,7 @@ export default function Strike1() {
               isLocked={isCurrentLocked}
               isSubmitted={isCurrentSubmitted}
               isExpired={timerExpired}
+              isWaitingForTimer={!effectiveEndsAt}
             />
           </motion.div>
         </AnimatePresence>

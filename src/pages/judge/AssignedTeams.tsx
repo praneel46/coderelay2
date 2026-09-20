@@ -27,8 +27,8 @@ export default function AssignedTeams() {
   const navigate = useNavigate();
   const { getTeamEvaluation } = useCompetition();
 
-  const judgeId = user?.judgeId || 'J001';
-  const defaultJudge = DEFAULT_ACTIVE_JUDGES.find((j) => j.judgeId === judgeId) || DEFAULT_ACTIVE_JUDGES[0];
+  const judgeId = user?.judgeId || '';
+  const defaultJudge = DEFAULT_ACTIVE_JUDGES.find((j) => j.judgeId === judgeId);
 
   const [judgeData, setJudgeData] = useState<{
     judgeId: string;
@@ -36,14 +36,15 @@ export default function AssignedTeams() {
     assignedTeamIds: string[];
   }>({
     judgeId,
-    name: defaultJudge.name,
-    assignedTeamIds: defaultJudge.assignedTeamIds || [],
+    name: defaultJudge?.name || (judgeId ? `Judge ${judgeId}` : 'Judge'),
+    assignedTeamIds: defaultJudge?.assignedTeamIds || [],
   });
 
   const [teamsMap, setTeamsMap] = useState<Map<string, { teamId: string; teamName: string }>>(new Map());
 
   // 1. Subscribe to real-time /judges/{judgeId} doc
   useEffect(() => {
+    if (!judgeId) return;
     const judgeRef = doc(db, 'judges', judgeId);
     const unsub = onSnapshot(
       judgeRef,
@@ -52,7 +53,7 @@ export default function AssignedTeams() {
           const d = docSnap.data();
           setJudgeData({
             judgeId: d.judgeId || judgeId,
-            name: d.name || defaultJudge.name,
+            name: d.name || defaultJudge?.name || `Judge ${judgeId}`,
             assignedTeamIds: Array.isArray(d.assignedTeamIds) ? d.assignedTeamIds : [],
           });
         }
@@ -62,7 +63,7 @@ export default function AssignedTeams() {
       }
     );
     return () => unsub();
-  }, [judgeId, defaultJudge.name]);
+  }, [judgeId, defaultJudge?.name]);
 
   // 2. Subscribe to /teams to get team names
   useEffect(() => {
