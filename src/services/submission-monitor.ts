@@ -248,11 +248,17 @@ export function buildSubmissionSummaries(
       strike2Submitted,
       strike2DebugMarks,
       strike2CompletedAt: timings.strike2CompletedAt || null,
-      strike2EvaluatedAt: resultDoc?.updatedAt || null,
+      strike2EvaluatedAt:
+        strike2DebugMarks !== null
+          ? (resultDoc as any)?.debugEvaluatedAt || (resultDoc as any)?.evaluatedAt || resultDoc?.updatedAt || null
+          : null,
       strike3Submitted,
       strike3CodeMarks,
       strike3CompletedAt: timings.strike3CompletedAt || null,
-      strike3EvaluatedAt: resultDoc?.updatedAt || null,
+      strike3EvaluatedAt:
+        strike3CodeMarks !== null
+          ? (resultDoc as any)?.codeEvaluatedAt || (resultDoc as any)?.evaluatedAt || resultDoc?.updatedAt || null
+          : null,
       finalScore,
       lastSubmittedAt: timings.lastSubmittedAt || null,
       status,

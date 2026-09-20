@@ -10,6 +10,8 @@ import {
   ChevronRight,
   Save,
   Check,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { MOCK_TEAMS } from '../../data/mock-teams';
@@ -21,17 +23,20 @@ import {
   MOCK_STRIKE3_QUESTIONS,
 } from '../../data/mock-questions';
 import { useCompetition } from '../../context/CompetitionContext';
+import { useAuth } from '../../context/AuthContext';
 
 export default function TeamSubmissions() {
   const { teamId = 'CRL-0000' } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { getTeamEvaluation, updateTeamScores } = useCompetition();
+  const { user } = useAuth();
 
   const [activeStrikeTab, setActiveStrikeTab] = useState<'strike1' | 'strike2' | 'strike3'>('strike2');
 
   // Retrieve current saved scores
   const teamEval = getTeamEvaluation(teamId);
 
+  const [predictScore, setPredictScore] = useState<number>(teamEval.predictScore ?? 0);
   const [debugInput, setDebugInput] = useState<number | ''>(
     teamEval.debugMarks !== null ? teamEval.debugMarks : ''
   );
@@ -39,18 +44,61 @@ export default function TeamSubmissions() {
     teamEval.codeMarks !== null ? teamEval.codeMarks : ''
   );
 
-  const [debugSaved, setDebugSaved] = useState(teamEval.debugMarks !== null);
-  const [codeSaved, setCodeSaved] = useState(teamEval.codeMarks !== null);
+  const [savedDebugScore, setSavedDebugScore] = useState<number | null>(teamEval.debugMarks);
+  const [savedCodeScore, setSavedCodeScore] = useState<number | null>(teamEval.codeMarks);
+
+  const [debugSaveStatus, setDebugSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [codeSaveStatus, setCodeSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const [toast, setToast] = useState<string | null>(null);
 
+  // Authoritative real-time listener to /results/{teamId}
+  useEffect(() => {
+    if (!teamId) return;
+    const unsub = onSnapshot(
+      doc(db, 'results', teamId),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (typeof d.predictScore === 'number' && d.predictScore > 0) {
+            setPredictScore(d.predictScore);
+          }
+          if (d.debugMarks !== undefined) {
+            setSavedDebugScore(d.debugMarks);
+            if (d.debugMarks !== null) {
+              setDebugInput(d.debugMarks);
+              setDebugSaved(true);
+            }
+          }
+          if (d.codeMarks !== undefined) {
+            setSavedCodeScore(d.codeMarks);
+            if (d.codeMarks !== null) {
+              setCodeInput(d.codeMarks);
+              setCodeSaved(true);
+            }
+          }
+        }
+      },
+      (err) => {
+        console.warn('[TeamSubmissions] Error listening to results doc:', err);
+      }
+    );
+    return () => unsub();
+  }, [teamId]);
+
+  // Context fallback sync
   useEffect(() => {
     const updated = getTeamEvaluation(teamId);
+    if (updated.predictScore) setPredictScore(updated.predictScore);
     if (updated.debugMarks !== null) {
       setDebugInput(updated.debugMarks);
+      setSavedDebugScore(updated.debugMarks);
       setDebugSaved(true);
     }
     if (updated.codeMarks !== null) {
       setCodeInput(updated.codeMarks);
+      setSavedCodeScore(updated.codeMarks);
       setCodeSaved(true);
     }
   }, [teamId, getTeamEvaluation]);
@@ -60,20 +108,48 @@ export default function TeamSubmissions() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleSaveDebug = () => {
+  const handleSaveDebug = async () => {
     if (debugInput === '') return;
     const score = Math.min(60, Math.max(0, Number(debugInput)));
-    updateTeamScores(teamId, { debugMarks: score });
-    setDebugSaved(true);
-    showToast(`Debug score saved (${score}/60). Leaderboard updated.`);
+    setDebugSaveStatus('saving');
+    setSaveError(null);
+    try {
+      await updateTeamScores(teamId, {
+        debugMarks: score,
+        judgeId: user?.judgeId,
+      });
+      setSavedDebugScore(score);
+      setDebugSaved(true);
+      setDebugSaveStatus('saved');
+      showToast(`Debug score saved (${score}/60). Leaderboard updated.`);
+      setTimeout(() => setDebugSaveStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('[TeamSubmissions] Save Debug failed:', err);
+      setDebugSaveStatus('error');
+      setSaveError(err.message || 'Failed to save Debug score. Please check your assignment permissions.');
+    }
   };
 
-  const handleSaveCode = () => {
+  const handleSaveCode = async () => {
     if (codeInput === '') return;
     const score = Math.min(60, Math.max(0, Number(codeInput)));
-    updateTeamScores(teamId, { codeMarks: score });
-    setCodeSaved(true);
-    showToast(`Code score saved (${score}/60). Leaderboard updated.`);
+    setCodeSaveStatus('saving');
+    setSaveError(null);
+    try {
+      await updateTeamScores(teamId, {
+        codeMarks: score,
+        judgeId: user?.judgeId,
+      });
+      setSavedCodeScore(score);
+      setCodeSaved(true);
+      setCodeSaveStatus('saved');
+      showToast(`Code score saved (${score}/60). Leaderboard updated.`);
+      setTimeout(() => setCodeSaveStatus('idle'), 3000);
+    } catch (err: any) {
+      console.error('[TeamSubmissions] Save Code failed:', err);
+      setCodeSaveStatus('error');
+      setSaveError(err.message || 'Failed to save Code score. Please check your assignment permissions.');
+    }
   };
 
   const [teamInfo, setTeamInfo] = useState<{
@@ -183,7 +259,7 @@ export default function TeamSubmissions() {
               <div>
                 <span className="text-slate-500 block text-[10px] uppercase">Predict Score</span>
                 <span className="text-cyan-400 font-bold text-base">
-                  {teamEval.predictScore} / 30
+                  {predictScore !== null ? `${predictScore} / 30` : '— / 30'}
                 </span>
               </div>
               <span className="text-[10px] text-slate-500 bg-dark-900 px-2 py-0.5 rounded border border-dark-700">
@@ -194,14 +270,14 @@ export default function TeamSubmissions() {
             <div className="bg-dark-800/80 p-3 rounded-lg border border-dark-700 font-mono text-xs">
               <span className="text-slate-500 block text-[10px] uppercase">Debug Score</span>
               <span className="text-indigo-400 font-bold text-base">
-                {teamEval.debugMarks !== null ? `${teamEval.debugMarks} / 60` : 'Not Scored'}
+                {savedDebugScore !== null ? `${savedDebugScore} / 60` : 'Not Scored'}
               </span>
             </div>
 
             <div className="bg-dark-800/80 p-3 rounded-lg border border-dark-700 font-mono text-xs">
               <span className="text-slate-500 block text-[10px] uppercase">Code Score</span>
               <span className="text-purple-400 font-bold text-base">
-                {teamEval.codeMarks !== null ? `${teamEval.codeMarks} / 60` : 'Not Scored'}
+                {savedCodeScore !== null ? `${savedCodeScore} / 60` : 'Not Scored'}
               </span>
             </div>
           </div>
@@ -333,12 +409,19 @@ export default function TeamSubmissions() {
                     Enter the team's combined mark for Strike 2 Debug (0 – 60). This automatically flows to Evaluation and Leaderboard.
                   </p>
                 </div>
-                {debugSaved && (
+                {savedDebugScore !== null && (
                   <span className="flex items-center gap-1.5 text-xs font-mono px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/50 text-emerald-400 font-bold">
-                    <Check className="w-4 h-4" /> Saved: {teamEval.debugMarks} / 60
+                    <Check className="w-4 h-4" /> Saved: {savedDebugScore} / 60
                   </span>
                 )}
               </div>
+
+              {saveError && (
+                <div className="bg-rose-950/60 border border-rose-500/50 p-3 rounded-lg text-xs font-mono text-rose-200 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{saveError}</span>
+                </div>
+              )}
 
               <div className="flex items-center gap-4 flex-wrap pt-2">
                 <div className="relative w-44">
@@ -363,11 +446,30 @@ export default function TeamSubmissions() {
                 <button
                   type="button"
                   onClick={handleSaveDebug}
-                  disabled={debugInput === ''}
+                  disabled={debugInput === '' || debugSaveStatus === 'saving'}
                   className="btn-primary py-3 px-5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(99,102,241,0.4)] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>{debugSaved ? 'Update Debug Score' : 'Save Debug Score'}</span>
+                  {debugSaveStatus === 'saving' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Saving Debug Marks...</span>
+                    </>
+                  ) : debugSaveStatus === 'saved' ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>Saved ({savedDebugScore}/60)</span>
+                    </>
+                  ) : debugSaveStatus === 'error' ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-rose-300" />
+                      <span>Save Failed — Retry</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{savedDebugScore !== null ? 'Update Debug Score' : 'Save Debug Score'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -423,12 +525,19 @@ export default function TeamSubmissions() {
                     Enter the team's combined mark for Strike 3 Code (0 – 60). This automatically flows to Evaluation and Leaderboard.
                   </p>
                 </div>
-                {codeSaved && (
+                {savedCodeScore !== null && (
                   <span className="flex items-center gap-1.5 text-xs font-mono px-3 py-1 rounded-full bg-emerald-950/40 border border-emerald-500/50 text-emerald-400 font-bold">
-                    <Check className="w-4 h-4" /> Saved: {teamEval.codeMarks} / 60
+                    <Check className="w-4 h-4" /> Saved: {savedCodeScore} / 60
                   </span>
                 )}
               </div>
+
+              {saveError && (
+                <div className="bg-rose-950/60 border border-rose-500/50 p-3 rounded-lg text-xs font-mono text-rose-200 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{saveError}</span>
+                </div>
+              )}
 
               <div className="flex items-center gap-4 flex-wrap pt-2">
                 <div className="relative w-44">
@@ -453,11 +562,30 @@ export default function TeamSubmissions() {
                 <button
                   type="button"
                   onClick={handleSaveCode}
-                  disabled={codeInput === ''}
+                  disabled={codeInput === '' || codeSaveStatus === 'saving'}
                   className="btn-primary py-3 px-5 bg-purple-600 hover:bg-purple-500 text-white font-bold flex items-center gap-2 shadow-[0_0_15px_rgba(168,85,247,0.4)] disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  <Save className="w-4 h-4" />
-                  <span>{codeSaved ? 'Update Code Score' : 'Save Code Score'}</span>
+                  {codeSaveStatus === 'saving' ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Saving Code Marks...</span>
+                    </>
+                  ) : codeSaveStatus === 'saved' ? (
+                    <>
+                      <Check className="w-4 h-4 text-emerald-300" />
+                      <span>Saved ({savedCodeScore}/60)</span>
+                    </>
+                  ) : codeSaveStatus === 'error' ? (
+                    <>
+                      <AlertTriangle className="w-4 h-4 text-rose-300" />
+                      <span>Save Failed — Retry</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{savedCodeScore !== null ? 'Update Code Score' : 'Save Code Score'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

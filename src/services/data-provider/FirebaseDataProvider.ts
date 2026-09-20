@@ -8,15 +8,17 @@
 import type { IDataProvider } from './types';
 import type { CompetitionState } from '../../types/competition-state';
 import type { Submission, StrikeId } from '../../types/competition';
-import type { RankEntry, StrikeTiming } from '../../types/results';
+import type { RankEntry, StrikeTiming, EvaluationStatus } from '../../types/results';
 import type { EvaluationAuditEntry } from '../../types/judge';
 import type { AuthUser } from '../../context/AuthContext';
+import type { FirestoreResultDoc } from '../../firebase/schema';
 import {
   signInOrganizerWithGoogle,
   signInJudgeWithCredentials,
   signInParticipantWithCredentials,
   signOutFromFirebase,
   subscribeToFirebaseAuthState,
+  JUDGE_ACCOUNTS,
 } from '../../firebase/auth';
 import {
   subscribeToCompetitionState,
@@ -293,48 +295,185 @@ export class FirebaseDataProvider implements IDataProvider {
       teamName?: string;
     }
   ): Promise<void> {
-    const evalId = `eval_${teamId}`;
+    const canonicalTeamId = teamId.trim().toUpperCase();
+    const evalId = `eval_${canonicalTeamId}`;
     const evalRef = doc(db, COLLECTIONS.EVALUATIONS, evalId);
+    const resultRef = doc(db, COLLECTIONS.RESULTS, canonicalTeamId);
 
-    const predict = scores.predictScore ?? 0;
-    const debug = scores.debugMarks !== undefined ? scores.debugMarks : null;
-    const code = scores.codeMarks !== undefined ? scores.codeMarks : null;
-    const debugCodeTotal = debug !== null || code !== null ? (debug ?? 0) + (code ?? 0) : null;
-    const total = predict + (debug ?? 0) + (code ?? 0);
+    // 1. Fetch existing result & evaluation documents to preserve un-updated scores and metadata
+    let existingResult: FirestoreResultDoc | null = null;
+    try {
+      const resultSnap = await getDoc(resultRef);
+      if (resultSnap.exists()) {
+        existingResult = resultSnap.data() as FirestoreResultDoc;
+      }
+    } catch (err) {
+      console.warn('[FirebaseDataProvider] Could not read existing result doc:', err);
+    }
 
-    const payload = {
-      evaluationId: evalId,
-      teamId,
-      judgeId: scores.judgeId || 'J001',
-      predictScore: predict,
-      debugMarks: debug,
-      codeMarks: code,
-      debugCodeTotal,
-      finalScore: total,
-      status: debug !== null && code !== null ? 'submitted' : 'in_progress',
-      updatedAt: new Date().toISOString(),
+    let existingEval: any = null;
+    try {
+      const evalSnap = await getDoc(evalRef);
+      if (evalSnap.exists()) {
+        existingEval = evalSnap.data();
+      }
+    } catch (err) {
+      // Non-fatal if does not exist or judge lacks permission on uncreated eval
+    }
+
+    // 2. Resolve authoritative Judge ID matching Security Rules currentJudgeId()
+    const currentEmail = auth.currentUser?.email?.trim().toLowerCase() || '';
+    const mappedJudge = JUDGE_ACCOUNTS[currentEmail];
+    const authoritativeJudgeId =
+      mappedJudge?.judgeId ||
+      scores.judgeId ||
+      existingEval?.judgeId ||
+      existingResult?.assignedJudgeId ||
+      'J001';
+
+    // 3. Resolve Predict Score (preserve existing, or use incoming, never overwrite with 0)
+    let predict = scores.predictScore !== undefined ? scores.predictScore : null;
+    if (predict === null || predict === undefined) {
+      if (typeof existingResult?.predictScore === 'number' && existingResult.predictScore > 0) {
+        predict = existingResult.predictScore;
+      } else if (typeof existingEval?.predictScore === 'number' && existingEval.predictScore > 0) {
+        predict = existingEval.predictScore;
+      } else {
+        predict = existingResult?.predictScore ?? 0;
+      }
+    }
+
+    // 4. Resolve Debug and Code marks (preserve untouched marks)
+    const debug =
+      scores.debugMarks !== undefined
+        ? scores.debugMarks
+        : existingResult?.debugMarks !== undefined
+        ? existingResult.debugMarks
+        : existingEval?.debugMarks !== undefined
+        ? existingEval.debugMarks
+        : null;
+
+    const code =
+      scores.codeMarks !== undefined
+        ? scores.codeMarks
+        : existingResult?.codeMarks !== undefined
+        ? existingResult.codeMarks
+        : existingEval?.codeMarks !== undefined
+        ? existingEval.codeMarks
+        : null;
+
+    // 5. Aggregate calculated totals
+    const debugCodeTotal =
+      debug !== null || code !== null
+        ? (debug ?? 0) + (code ?? 0)
+        : null;
+
+    const finalScore =
+      predict !== null || debug !== null || code !== null
+        ? (predict ?? 0) + (debug ?? 0) + (code ?? 0)
+        : null;
+
+    const evaluationStatus: EvaluationStatus =
+      debug !== null && code !== null
+        ? 'evaluated'
+        : debug !== null || code !== null
+        ? 'in_progress'
+        : (existingResult?.evaluationStatus || 'pending');
+
+    const nowIso = new Date().toISOString();
+
+    // Preserve participant submission completion timings strictly
+    const timingPayload: StrikeTiming = {
+      strike1CompletedAt:
+        scores.timing?.strike1CompletedAt ||
+        existingResult?.timing?.strike1CompletedAt ||
+        null,
+      strike2CompletedAt:
+        scores.timing?.strike2CompletedAt ||
+        existingResult?.timing?.strike2CompletedAt ||
+        null,
+      strike3CompletedAt:
+        scores.timing?.strike3CompletedAt ||
+        existingResult?.timing?.strike3CompletedAt ||
+        null,
+      finalSubmittedAt:
+        scores.timing?.finalSubmittedAt ||
+        existingResult?.timing?.finalSubmittedAt ||
+        null,
+      totalElapsedSeconds:
+        scores.timing?.totalElapsedSeconds ??
+        existingResult?.timing?.totalElapsedSeconds,
     };
 
-    await setDoc(evalRef, payload, { merge: true });
-
-    // Also update public results document for leaderboard
-    const resultRef = doc(db, COLLECTIONS.RESULTS, teamId);
+    // 6. Write to /results/{teamId} (authoritative source for leaderboard & submissions monitor)
     await setDoc(
       resultRef,
       {
-        teamId,
-        ...(scores.teamName ? { teamName: scores.teamName } : {}),
+        teamId: canonicalTeamId,
+        teamName: scores.teamName || existingResult?.teamName || `Team ${canonicalTeamId}`,
+        assignedJudgeId: authoritativeJudgeId,
         predictScore: predict,
         debugMarks: debug,
         codeMarks: code,
         debugCodeTotal,
-        finalScore: total,
-        evaluationStatus: debug !== null && code !== null ? 'evaluated' : 'in_progress',
-        ...(scores.timing ? { timing: scores.timing } : {}),
-        updatedAt: new Date().toISOString(),
+        finalScore,
+        evaluationStatus,
+        timing: timingPayload,
+        evaluatedAt: nowIso,
+        ...(scores.debugMarks !== undefined ? { debugEvaluatedAt: nowIso } : {}),
+        ...(scores.codeMarks !== undefined ? { codeEvaluatedAt: nowIso } : {}),
+        updatedAt: nowIso,
       },
       { merge: true }
     );
+
+    // 7. Write to /evaluations/{evalId} (detailed evaluation document)
+    await setDoc(
+      evalRef,
+      {
+        evaluationId: evalId,
+        teamId: canonicalTeamId,
+        judgeId: authoritativeJudgeId,
+        predictScore: predict ?? 0,
+        debugMarks: debug,
+        codeMarks: code,
+        debugCodeTotal: debugCodeTotal ?? 0,
+        finalScore: finalScore ?? 0,
+        status: debug !== null && code !== null ? 'submitted' : 'in_progress',
+        evaluatedAt: nowIso,
+        updatedAt: nowIso,
+      },
+      { merge: true }
+    );
+
+    // 8. Write immutable audit log to /auditLogs
+    try {
+      await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+        logId: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        action: 'UPDATE_SCORES',
+        teamId: canonicalTeamId,
+        judgeId: authoritativeJudgeId,
+        actor: auth.currentUser?.uid || authoritativeJudgeId,
+        previousDebugMarks: existingResult?.debugMarks ?? null,
+        newDebugMarks: debug,
+        previousCodeMarks: existingResult?.codeMarks ?? null,
+        newCodeMarks: code,
+        predictScore: predict,
+        finalScore,
+        timestamp: nowIso,
+        note:
+          scores.note ||
+          (debug !== null && code !== null
+            ? 'Complete evaluation saved'
+            : scores.debugMarks !== undefined
+            ? `Debug score updated to ${scores.debugMarks}/60`
+            : scores.codeMarks !== undefined
+            ? `Code score updated to ${scores.codeMarks}/60`
+            : 'Evaluation score adjusted'),
+      });
+    } catch (auditErr) {
+      console.warn('[FirebaseDataProvider] Could not write audit log:', auditErr);
+    }
   }
 
   subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, onError?: (err: Error) => void): () => void {

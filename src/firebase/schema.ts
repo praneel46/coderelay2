@@ -125,6 +125,7 @@ export interface FirestoreResultDoc {
   teamId: string;
   rank?: number | null;
   teamName: string;
+  assignedJudgeId?: string | null;
   predictScore?: number | null;
   debugMarks: number | null;
   codeMarks: number | null;
@@ -133,6 +134,9 @@ export interface FirestoreResultDoc {
   evaluationStatus: EvaluationStatus;
   timing: StrikeTiming;
   tieBreakerApplied: boolean;
+  evaluatedAt?: string | null;
+  debugEvaluatedAt?: string | null;
+  codeEvaluatedAt?: string | null;
   updatedAt: string;
 }
 

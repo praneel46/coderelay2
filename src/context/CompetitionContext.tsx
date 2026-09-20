@@ -376,9 +376,13 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
         note?: string;
       }
     ) => {
-      await dataProvider.updateTeamScores(teamId, scores);
+      const judgeId = scores.judgeId || user?.judgeId;
+      await dataProvider.updateTeamScores(teamId, {
+        ...scores,
+        ...(judgeId ? { judgeId } : {}),
+      });
     },
-    []
+    [user?.judgeId]
   );
 
   return (

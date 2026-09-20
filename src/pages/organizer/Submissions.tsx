@@ -8,25 +8,16 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileCheck2,
   Search,
-  Users,
   CheckCircle2,
-  Clock,
   ChevronDown,
   ChevronUp,
-  AlertTriangle,
   RefreshCw,
-  Eye,
-  Scale,
-  Code,
-  Zap,
 } from 'lucide-react';
 import OrganizerLayout from '../../components/layout/OrganizerLayout';
 import { db } from '../../firebase/config';
 import {
   collection,
   onSnapshot,
-  doc,
-  getDocs,
 } from 'firebase/firestore';
 import type { Submission } from '../../types/competition';
 import type { FirestoreResultDoc } from '../../firebase/schema';
@@ -493,13 +484,17 @@ export default function Submissions() {
 
                           {/* 6. Strike 2 (Debug) */}
                           <td className="px-4 py-3.5 text-center font-mono text-xs">
-                            {row.strike2Submitted ? (
+                            {row.strike2DebugMarks !== null ? (
                               <div className="flex flex-col items-center">
                                 <span className="text-indigo-300 font-bold flex items-center gap-1">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                  {row.strike2DebugMarks !== null
-                                    ? `${row.strike2DebugMarks} / 60`
-                                    : '— / 60'}
+                                  {row.strike2DebugMarks} / 60
+                                </span>
+                              </div>
+                            ) : row.strike2Submitted ? (
+                              <div className="flex flex-col items-center">
+                                <span className="text-slate-400 font-bold">
+                                  — / 60
                                 </span>
                               </div>
                             ) : (
@@ -514,13 +509,17 @@ export default function Submissions() {
 
                           {/* 8. Strike 3 (Code) */}
                           <td className="px-4 py-3.5 text-center font-mono text-xs">
-                            {row.strike3Submitted ? (
+                            {row.strike3CodeMarks !== null ? (
                               <div className="flex flex-col items-center">
                                 <span className="text-purple-300 font-bold flex items-center gap-1">
                                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                                  {row.strike3CodeMarks !== null
-                                    ? `${row.strike3CodeMarks} / 60`
-                                    : '— / 60'}
+                                  {row.strike3CodeMarks} / 60
+                                </span>
+                              </div>
+                            ) : row.strike3Submitted ? (
+                              <div className="flex flex-col items-center">
+                                <span className="text-slate-400 font-bold">
+                                  — / 60
                                 </span>
                               </div>
                             ) : (

@@ -10,9 +10,12 @@ import {
   Check,
   Edit3,
   ExternalLink,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { useCompetition } from '../../context/CompetitionContext';
+import { useAuth } from '../../context/AuthContext';
 import { MOCK_TEAMS } from '../../data/mock-teams';
 import { db } from '../../firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -21,6 +24,7 @@ export default function Evaluation() {
   const { teamId = 'CRL-0000' } = useParams<{ teamId: string }>();
   const navigate = useNavigate();
   const { getTeamEvaluation, updateTeamScores } = useCompetition();
+  const { user } = useAuth();
 
   const [teamInfo, setTeamInfo] = useState<{
     teamId: string;
@@ -62,7 +66,7 @@ export default function Evaluation() {
 
   const teamEval = getTeamEvaluation(teamId);
 
-  const predictScore = teamEval.predictScore;
+  const [predictScore, setPredictScore] = useState<number>(teamEval.predictScore ?? 0);
   const [debugMarks, setDebugMarks] = useState<number | ''>(
     teamEval.debugMarks !== null ? teamEval.debugMarks : ''
   );
@@ -70,31 +74,90 @@ export default function Evaluation() {
     teamEval.codeMarks !== null ? teamEval.codeMarks : ''
   );
 
+  const [savedDebugScore, setSavedDebugScore] = useState<number | null>(teamEval.debugMarks);
+  const [savedCodeScore, setSavedCodeScore] = useState<number | null>(teamEval.codeMarks);
+
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  // Sync state whenever evaluation updates
+  // Authoritative real-time listener to /results/{teamId}
+  useEffect(() => {
+    if (!teamId) return;
+    const unsub = onSnapshot(
+      doc(db, 'results', teamId),
+      (snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          if (typeof d.predictScore === 'number' && d.predictScore > 0) {
+            setPredictScore(d.predictScore);
+          }
+          if (d.debugMarks !== undefined) {
+            setSavedDebugScore(d.debugMarks);
+            if (d.debugMarks !== null) setDebugMarks(d.debugMarks);
+          }
+          if (d.codeMarks !== undefined) {
+            setSavedCodeScore(d.codeMarks);
+            if (d.codeMarks !== null) setCodeMarks(d.codeMarks);
+          }
+        }
+      },
+      (err) => {
+        console.warn('[Evaluation] Error listening to results doc:', err);
+      }
+    );
+    return () => unsub();
+  }, [teamId]);
+
+  // Sync state whenever competition context updates
   useEffect(() => {
     const updated = getTeamEvaluation(teamId);
-    if (updated.debugMarks !== null) setDebugMarks(updated.debugMarks);
-    if (updated.codeMarks !== null) setCodeMarks(updated.codeMarks);
+    if (updated.predictScore) setPredictScore(updated.predictScore);
+    if (updated.debugMarks !== null) {
+      setDebugMarks(updated.debugMarks);
+      setSavedDebugScore(updated.debugMarks);
+    }
+    if (updated.codeMarks !== null) {
+      setCodeMarks(updated.codeMarks);
+      setSavedCodeScore(updated.codeMarks);
+    }
   }, [teamId, getTeamEvaluation]);
 
-  const numDebug = typeof debugMarks === 'number' ? debugMarks : 0;
-  const numCode = typeof codeMarks === 'number' ? codeMarks : 0;
-  const debugCodeTotal = numDebug + numCode;
-  const finalScore = predictScore + debugCodeTotal;
+  const numDebug = typeof debugMarks === 'number' ? debugMarks : null;
+  const numCode = typeof codeMarks === 'number' ? codeMarks : null;
+  const debugCodeTotal =
+    numDebug !== null || numCode !== null ? (numDebug ?? 0) + (numCode ?? 0) : null;
+  const finalScore =
+    predictScore !== null || numDebug !== null || numCode !== null
+      ? (predictScore ?? 0) + (numDebug ?? 0) + (numCode ?? 0)
+      : null;
 
-  const hasDebugScore = teamEval.debugMarks !== null;
-  const hasCodeScore = teamEval.codeMarks !== null;
+  const hasDebugScore = savedDebugScore !== null;
+  const hasCodeScore = savedCodeScore !== null;
   const isBothEvaluated = hasDebugScore && hasCodeScore;
 
-  const handleUpdate = () => {
-    updateTeamScores(teamId, {
-      debugMarks: typeof debugMarks === 'number' ? debugMarks : null,
-      codeMarks: typeof codeMarks === 'number' ? codeMarks : null,
-    });
-    setToast('Evaluation updated. Leaderboard synchronized.');
-    setTimeout(() => setToast(null), 3000);
+  const handleUpdate = async () => {
+    setSaveStatus('saving');
+    setErrorMessage(null);
+    try {
+      await updateTeamScores(teamId, {
+        debugMarks: typeof debugMarks === 'number' ? debugMarks : null,
+        codeMarks: typeof codeMarks === 'number' ? codeMarks : null,
+        judgeId: user?.judgeId,
+      });
+      setSavedDebugScore(typeof debugMarks === 'number' ? debugMarks : null);
+      setSavedCodeScore(typeof codeMarks === 'number' ? codeMarks : null);
+      setSaveStatus('saved');
+      setToast('Evaluation updated. Leaderboard synchronized.');
+      setTimeout(() => {
+        setSaveStatus('idle');
+        setToast(null);
+      }, 3000);
+    } catch (err: any) {
+      console.error('[Evaluation] Save failed:', err);
+      setSaveStatus('error');
+      setErrorMessage(err.message || 'Failed to save marks. Check assignment permissions.');
+    }
   };
 
   return (
@@ -291,10 +354,11 @@ export default function Evaluation() {
                   DEBUG + CODE COMBINED
                 </span>
                 <div className="font-mono text-2xl font-black text-emerald-400">
-                  {debugCodeTotal} <span className="text-slate-600 text-sm font-normal">/ 120</span>
+                  {debugCodeTotal !== null ? debugCodeTotal : '—'}{' '}
+                  <span className="text-slate-600 text-sm font-normal">/ 120</span>
                 </div>
                 <p className="text-[11px] font-mono text-slate-500">
-                  {numDebug} (Debug) + {numCode} (Code)
+                  {numDebug !== null ? numDebug : '—'} (Debug) + {numCode !== null ? numCode : '—'} (Code)
                 </p>
               </div>
 
@@ -304,10 +368,11 @@ export default function Evaluation() {
                   FINAL COMPETITION SCORE
                 </span>
                 <div className="font-mono text-3xl font-black text-cyan-400 text-glow-cyan">
-                  {finalScore} <span className="text-slate-600 text-base font-normal">/ 150</span>
+                  {finalScore !== null ? finalScore : predictScore}{' '}
+                  <span className="text-slate-600 text-base font-normal">/ 150</span>
                 </div>
                 <p className="text-[11px] font-mono text-slate-500">
-                  {predictScore} (Predict) + {debugCodeTotal} (Debug + Code)
+                  {predictScore} (Predict) + {debugCodeTotal !== null ? debugCodeTotal : 0} (Debug + Code)
                 </p>
               </div>
             </div>
@@ -324,6 +389,13 @@ export default function Evaluation() {
                 Syncs with Leaderboard & Strike reviews
               </span>
             </div>
+
+            {errorMessage && (
+              <div className="bg-rose-950/60 border border-rose-500/50 p-3 rounded-lg text-xs font-mono text-rose-200 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -365,11 +437,30 @@ export default function Evaluation() {
               <button
                 type="button"
                 onClick={handleUpdate}
-                disabled={debugMarks === '' && codeMarks === ''}
+                disabled={(debugMarks === '' && codeMarks === '') || saveStatus === 'saving'}
                 className="btn-primary py-2 px-4 text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-dark-950 font-bold disabled:opacity-40"
               >
-                <Scale className="w-3.5 h-3.5" />
-                <span>Save & Sync Marks</span>
+                {saveStatus === 'saving' ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : saveStatus === 'saved' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Saved</span>
+                  </>
+                ) : saveStatus === 'error' ? (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-300" />
+                    <span>Save Failed — Retry</span>
+                  </>
+                ) : (
+                  <>
+                    <Scale className="w-3.5 h-3.5" />
+                    <span>Save & Sync Marks</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
