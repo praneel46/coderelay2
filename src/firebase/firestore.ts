@@ -100,39 +100,85 @@ export function subscribeToLeaderboard(
   let submissionsByTeam = new Map<string, Submission[]>();
 
   const rebuildLeaderboard = () => {
-    // 1. Source population: ALL qualified Round 2 teams
-    const qualifiedTeams = Array.from(teamsMap.values()).filter(
-      (t) =>
+    // 1. Source population: ALL qualified Round 2 teams + any team in results or submissions
+    const qualifiedTeamIds = new Set<string>();
+
+    teamsMap.forEach((t, docId) => {
+      const statusUpper = (t.status || '').toUpperCase();
+      if (
         t.round2Eligible === true ||
-        t.status === 'QUALIFIED_FOR_ROUND_2' ||
-        t.status === 'READY' ||
-        t.status === 'ACTIVE' ||
-        t.status === 'active' ||
-        t.status === 'COMPLETED'
-    );
+        statusUpper === 'QUALIFIED_FOR_ROUND_2' ||
+        statusUpper === 'READY' ||
+        statusUpper === 'ACTIVE' ||
+        statusUpper === 'COMPLETED'
+      ) {
+        qualifiedTeamIds.add((t.teamId || docId).trim().toUpperCase());
+      }
+    });
 
-    const rawEntries = qualifiedTeams.map((team) => {
-      const d = resultsMap.get(team.teamId);
-      const teamSubs = submissionsByTeam.get(team.teamId) || [];
+    // Also include any team present in resultsMap so no scored team ever disappears
+    resultsMap.forEach((_res, docId) => {
+      qualifiedTeamIds.add(docId.trim().toUpperCase());
+    });
 
-      // Authoritative predictScore comes exclusively from /results/{teamId}
+    // Also include any team with submissions
+    submissionsByTeam.forEach((_subs, teamId) => {
+      qualifiedTeamIds.add(teamId.trim().toUpperCase());
+    });
+
+    const rawEntries: RankEntry[] = Array.from(qualifiedTeamIds).map((canonicalTeamId) => {
+      // Find matching team in teamsMap (case-insensitive)
+      let teamObj = teamsMap.get(canonicalTeamId);
+      if (!teamObj) {
+        for (const [k, v] of teamsMap.entries()) {
+          if (k.toUpperCase() === canonicalTeamId || v.teamId?.toUpperCase() === canonicalTeamId) {
+            teamObj = v;
+            break;
+          }
+        }
+      }
+
+      // Find matching result in resultsMap (case-insensitive)
+      let d = resultsMap.get(canonicalTeamId);
+      if (!d) {
+        for (const [k, v] of resultsMap.entries()) {
+          if (k.toUpperCase() === canonicalTeamId || v.teamId?.toUpperCase() === canonicalTeamId) {
+            d = v;
+            break;
+          }
+        }
+      }
+
+      // Find matching submissions (case-insensitive)
+      let teamSubs = submissionsByTeam.get(canonicalTeamId) || [];
+      if (teamSubs.length === 0) {
+        for (const [k, v] of submissionsByTeam.entries()) {
+          if (k.toUpperCase() === canonicalTeamId) {
+            teamSubs = v;
+            break;
+          }
+        }
+      }
+
+      // Authoritative predictScore comes exclusively from /results/{teamId} (0 is a valid score!)
       const predictScore: number | null = typeof d?.predictScore === 'number' ? d.predictScore : null;
+      const debugMarks: number | null = typeof d?.debugMarks === 'number' ? d.debugMarks : null;
+      const codeMarks: number | null = typeof d?.codeMarks === 'number' ? d.codeMarks : null;
 
-      const debugMarks = d?.debugMarks ?? null;
-      const codeMarks = d?.codeMarks ?? null;
-      const debugCodeTotal =
-        debugMarks !== null || codeMarks !== null
-          ? (debugMarks ?? 0) + (codeMarks ?? 0)
-          : null;
-      const finalScore =
-        predictScore !== null || debugMarks !== null || codeMarks !== null
-          ? (predictScore ?? 0) + (debugMarks ?? 0) + (codeMarks ?? 0)
+      // Both debug and code must be evaluated for debugCodeTotal
+      const debugCodeTotal: number | null =
+        debugMarks !== null && codeMarks !== null ? debugMarks + codeMarks : null;
+
+      // Final score is ONLY calculated when ALL THREE are present. Otherwise null (displays '—').
+      const finalScore: number | null =
+        predictScore !== null && debugMarks !== null && codeMarks !== null
+          ? predictScore + debugMarks + codeMarks
           : null;
 
       let evaluationStatus: EvaluationStatus = 'pending';
       if (debugMarks !== null && codeMarks !== null) {
         evaluationStatus = 'evaluated';
-      } else if (debugMarks !== null || codeMarks !== null) {
+      } else if (predictScore !== null || debugMarks !== null || codeMarks !== null) {
         evaluationStatus = 'in_progress';
       } else if (d?.evaluationStatus) {
         evaluationStatus = d.evaluationStatus;
@@ -141,8 +187,8 @@ export function subscribeToLeaderboard(
       const timing = extractStrikeTimings(teamSubs, d?.timing);
 
       return {
-        teamId: team.teamId,
-        teamName: team.teamName || d?.teamName || `Team ${team.teamId}`,
+        teamId: canonicalTeamId,
+        teamName: teamObj?.teamName || d?.teamName || `Team ${canonicalTeamId}`,
         predictScore,
         debugMarks,
         codeMarks,

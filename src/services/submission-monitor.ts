@@ -8,6 +8,7 @@ import type { Submission } from '../types/competition';
 import type { StrikeTiming, RankEntry, EvaluationStatus } from '../types/results';
 import type { FirestoreResultDoc } from '../firebase/schema';
 import { doc, setDoc, type Firestore } from 'firebase/firestore';
+import { sanitizeForFirestore } from '../utils/sanitize.ts';
 
 export const STRIKE1_KEY: Record<string, { answer: string; points: number }> = {
   'q1-01': { answer: 'A', points: 10 },
@@ -214,10 +215,11 @@ export async function syncSubmissionsToResultsDoc(
 ): Promise<void> {
   const resultRef = doc(db, 'results', summary.teamId);
 
+  const isManuallyOverridden = (existingResult as any)?.predictScoreSource === 'MANUAL_OVERRIDE';
   const needsPredictUpdate =
+    !isManuallyOverridden &&
     summary.strike1Score !== null &&
     (existingResult?.predictScore === undefined ||
-      existingResult?.predictScore === 0 ||
       existingResult?.predictScore !== summary.strike1Score);
 
   const needsTimingUpdate =
@@ -227,15 +229,20 @@ export async function syncSubmissionsToResultsDoc(
     (summary.lastSubmittedAt && !existingResult?.timing?.finalSubmittedAt);
 
   if (needsPredictUpdate || needsTimingUpdate) {
-    const predict = summary.strike1Score ?? existingResult?.predictScore ?? 0;
-    const debug = existingResult?.debugMarks ?? null;
-    const code = existingResult?.codeMarks ?? null;
-    const debugCodeTotal =
-      debug !== null || code !== null ? (debug ?? 0) + (code ?? 0) : null;
-    const finalScore =
-      summary.finalScore !== null ? summary.finalScore : predict + (debug ?? 0) + (code ?? 0);
+    const predict = isManuallyOverridden
+      ? existingResult?.predictScore ?? summary.strike1Score ?? null
+      : summary.strike1Score ?? existingResult?.predictScore ?? null;
 
-    const timingPayload: StrikeTiming = {
+    const debug = typeof existingResult?.debugMarks === 'number' ? existingResult.debugMarks : null;
+    const code = typeof existingResult?.codeMarks === 'number' ? existingResult.codeMarks : null;
+    const debugCodeTotal =
+      debug !== null && code !== null ? debug + code : null;
+    const finalScore =
+      predict !== null && debug !== null && code !== null
+        ? predict + debug + code
+        : null;
+
+    const timingPayload: Record<string, any> = {
       strike1CompletedAt:
         summary.strike1CompletedAt || existingResult?.timing?.strike1CompletedAt || null,
       strike2CompletedAt:
@@ -244,25 +251,27 @@ export async function syncSubmissionsToResultsDoc(
         summary.strike3CompletedAt || existingResult?.timing?.strike3CompletedAt || null,
       finalSubmittedAt:
         summary.lastSubmittedAt || existingResult?.timing?.finalSubmittedAt || null,
-      totalElapsedSeconds: existingResult?.timing?.totalElapsedSeconds,
     };
 
-    await setDoc(
-      resultRef,
-      {
-        teamId: summary.teamId,
-        teamName: summary.teamName,
-        assignedJudgeId: summary.assignedJudgeId,
-        predictScore: predict,
-        debugMarks: debug,
-        codeMarks: code,
-        debugCodeTotal,
-        finalScore,
-        timing: timingPayload,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
+    const elapsed = existingResult?.timing?.totalElapsedSeconds ?? summary.totalElapsedSeconds;
+    if (elapsed !== undefined && elapsed !== null && !isNaN(elapsed)) {
+      timingPayload.totalElapsedSeconds = elapsed;
+    }
+
+    const payload = sanitizeForFirestore({
+      teamId: summary.teamId,
+      teamName: summary.teamName,
+      assignedJudgeId: summary.assignedJudgeId,
+      predictScore: predict,
+      debugMarks: debug,
+      codeMarks: code,
+      debugCodeTotal,
+      finalScore,
+      timing: timingPayload,
+      updatedAt: new Date().toISOString(),
+    });
+
+    await setDoc(resultRef, payload, { merge: true });
   }
 }
 

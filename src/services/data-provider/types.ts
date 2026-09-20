@@ -38,7 +38,9 @@ export interface IDataProvider {
     scores: {
       debugMarks?: number | null;
       codeMarks?: number | null;
-      predictScore?: number;
+      predictScore?: number | null;
+      predictScoreSource?: 'AUTO' | 'MANUAL_OVERRIDE';
+      predictOverrideReason?: string;
       judgeId?: string;
       note?: string;
       timing?: StrikeTiming;
@@ -47,11 +49,11 @@ export interface IDataProvider {
   ): Promise<void>;
   subscribeAuditLogs(onUpdate: (logs: EvaluationAuditEntry[]) => void, onError?: (err: Error) => void): () => void;
   getTeamEvaluation(teamId: string): {
-    predictScore: number;
+    predictScore: number | null;
     debugMarks: number | null;
     codeMarks: number | null;
-    debugCodeTotal: number;
-    finalScore: number;
+    debugCodeTotal: number | null;
+    finalScore: number | null;
     status: 'pending' | 'in_progress' | 'submitted';
   };
   getTeamTiming(teamId: string): StrikeTiming;

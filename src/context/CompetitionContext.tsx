@@ -21,6 +21,7 @@ import { MOCK_INITIAL_STATE } from '../data/mock-competition-state';
 import { MOCK_RESULTS } from '../data/mock-results';
 import { dataProvider } from '../services/data-provider';
 import { useAuth } from './AuthContext';
+import { useSessionHeartbeat } from '../hooks/useSessionHeartbeat';
 
 // ----------------------------------------------------------------
 // Context value
@@ -57,17 +58,19 @@ export interface CompetitionContextValue {
     scores: {
       debugMarks?: number | null;
       codeMarks?: number | null;
-      predictScore?: number;
+      predictScore?: number | null;
+      predictScoreSource?: 'AUTO' | 'MANUAL_OVERRIDE';
+      predictOverrideReason?: string;
       judgeId?: string;
       note?: string;
     }
   ) => Promise<void>;
   getTeamEvaluation: (teamId: string) => {
-    predictScore: number;
+    predictScore: number | null;
     debugMarks: number | null;
     codeMarks: number | null;
-    debugCodeTotal: number;
-    finalScore: number;
+    debugCodeTotal: number | null;
+    finalScore: number | null;
     status: 'pending' | 'in_progress' | 'submitted';
   };
   getTeamTiming: (teamId: string) => StrikeTiming;
@@ -142,6 +145,7 @@ export function rankTeamsWithTieBreak(entries: RankEntry[]): RankEntry[] {
 // ----------------------------------------------------------------
 export function CompetitionProvider({ children }: { children: ReactNode }) {
   const { user, isAuthenticated } = useAuth();
+  useSessionHeartbeat();
   const [competitionState, setCompetitionState] = useState<CompetitionState>(MOCK_INITIAL_STATE);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [carryForward, setCarryForward] = useState<CarryForwardState>({ debugQuestionIds: [] });
@@ -350,11 +354,11 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       const res = results.find((r) => r.teamId === teamId);
       if (res) {
         return {
-          predictScore: res.predictScore ?? 0,
+          predictScore: res.predictScore ?? null,
           debugMarks: res.debugMarks,
           codeMarks: res.codeMarks,
-          debugCodeTotal: res.debugCodeTotal ?? 0,
-          finalScore: res.finalScore ?? 0,
+          debugCodeTotal: res.debugCodeTotal ?? null,
+          finalScore: res.finalScore ?? null,
           status: (res.evaluationStatus === 'evaluated'
             ? 'submitted'
             : res.evaluationStatus) as 'pending' | 'in_progress' | 'submitted',
@@ -371,9 +375,13 @@ export function CompetitionProvider({ children }: { children: ReactNode }) {
       scores: {
         debugMarks?: number | null;
         codeMarks?: number | null;
-        predictScore?: number;
+        predictScore?: number | null;
+        predictScoreSource?: 'AUTO' | 'MANUAL_OVERRIDE';
+        predictOverrideReason?: string;
         judgeId?: string;
         note?: string;
+        timing?: StrikeTiming;
+        teamName?: string;
       }
     ) => {
       const judgeId = scores.judgeId || user?.judgeId;

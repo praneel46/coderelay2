@@ -266,16 +266,18 @@ export class MockDataProvider implements IDataProvider {
   getTeamEvaluation(teamId: string) {
     const currentResults = loadFromStorage<RankEntry[]>(RESULTS_KEY, MOCK_RESULTS);
     const fallback = currentResults.find((r) => r.teamId === teamId);
-    const predictScore = (fallback && typeof fallback.predictScore === 'number') ? fallback.predictScore : 24;
+    const predictScore = (fallback && typeof fallback.predictScore === 'number') ? fallback.predictScore : null;
     const debugMarks = fallback?.debugMarks ?? null;
     const codeMarks = fallback?.codeMarks ?? null;
+    const debugCodeTotal = debugMarks !== null && codeMarks !== null ? debugMarks + codeMarks : null;
+    const finalScore = predictScore !== null && debugMarks !== null && codeMarks !== null ? predictScore + debugMarks + codeMarks : null;
     return {
       predictScore,
       debugMarks,
       codeMarks,
-      debugCodeTotal: (debugMarks ?? 0) + (codeMarks ?? 0),
-      finalScore: predictScore + (debugMarks ?? 0) + (codeMarks ?? 0),
-      status: (fallback ? fallback.evaluationStatus : 'pending') as any,
+      debugCodeTotal,
+      finalScore,
+      status: (fallback ? (fallback.evaluationStatus === 'evaluated' ? 'submitted' : fallback.evaluationStatus) : 'pending') as any,
     };
   }
 

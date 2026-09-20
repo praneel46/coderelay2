@@ -11,14 +11,14 @@ import { DEFAULT_ACTIVE_JUDGES } from '../../services/judge-assignment';
 interface TeamEvaluationCardData {
   teamId: string;
   teamName: string;
-  predictScore: number;
+  predictScore: number | null;
   debugStatus: 'SUBMITTED' | 'PENDING';
   codeStatus: 'SUBMITTED' | 'PENDING';
   evaluationStatus: 'EVALUATED' | 'IN_PROGRESS' | 'PENDING';
   evaluatedScore?: {
     debug: number | null;
     code: number | null;
-    final: number;
+    final: number | null;
   };
 }
 
@@ -190,7 +190,7 @@ export default function AssignedTeams() {
                 <div className="bg-dark-900/80 p-3 rounded-lg border border-dark-700">
                   <span className="text-slate-500 block uppercase text-[10px]">Strike 1 (Predict)</span>
                   <span className="text-cyan-300 font-bold text-sm mt-0.5 block">
-                    {card.predictScore} / 30
+                    {card.predictScore !== null ? `${card.predictScore} / 30` : '— / 30'}
                   </span>
                   <span className="text-[10px] text-slate-600 block mt-0.5">AUTO-CALCULATED</span>
                 </div>
@@ -230,7 +230,9 @@ export default function AssignedTeams() {
                   <span className="text-white font-bold">
                     Total:{' '}
                     <strong className="text-cyan-400 text-sm">
-                      {card.evaluatedScore?.final}/150
+                      {card.evaluatedScore?.final !== null && card.evaluatedScore?.final !== undefined
+                        ? `${card.evaluatedScore?.final}/150`
+                        : '— / 150'}
                     </strong>
                   </span>
                 </div>

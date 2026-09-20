@@ -12,6 +12,7 @@ import {
   ExternalLink,
   RefreshCw,
   AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
 import { useCompetition } from '../../context/CompetitionContext';
@@ -60,7 +61,14 @@ export default function Evaluation() {
 
   const teamEval = getTeamEvaluation(teamId);
 
-  const [predictScore, setPredictScore] = useState<number>(teamEval.predictScore ?? 0);
+  const [predictScore, setPredictScore] = useState<number | null>(teamEval.predictScore ?? null);
+  const [predictSource, setPredictSource] = useState<'AUTO' | 'MANUAL_OVERRIDE'>('AUTO');
+  const [predictOverrideReason, setPredictOverrideReason] = useState<string>('');
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overrideInput, setOverrideInput] = useState<string>('');
+  const [overrideReasonInput, setOverrideReasonInput] = useState<string>('');
+  const [overrideStatus, setOverrideStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
   const [debugMarks, setDebugMarks] = useState<number | ''>(
     teamEval.debugMarks !== null ? teamEval.debugMarks : ''
   );
@@ -83,8 +91,14 @@ export default function Evaluation() {
       (snap) => {
         if (snap.exists()) {
           const d = snap.data();
-          if (typeof d.predictScore === 'number' && d.predictScore > 0) {
+          if (typeof d.predictScore === 'number') {
             setPredictScore(d.predictScore);
+          }
+          if (d.predictScoreSource) {
+            setPredictSource(d.predictScoreSource);
+          }
+          if (d.predictOverrideReason) {
+            setPredictOverrideReason(d.predictOverrideReason);
           }
           if (d.debugMarks !== undefined) {
             setSavedDebugScore(d.debugMarks);
@@ -106,7 +120,9 @@ export default function Evaluation() {
   // Sync state whenever competition context updates
   useEffect(() => {
     const updated = getTeamEvaluation(teamId);
-    if (updated.predictScore) setPredictScore(updated.predictScore);
+    if (updated.predictScore !== null && updated.predictScore !== undefined) {
+      setPredictScore(updated.predictScore);
+    }
     if (updated.debugMarks !== null) {
       setDebugMarks(updated.debugMarks);
       setSavedDebugScore(updated.debugMarks);
@@ -120,15 +136,49 @@ export default function Evaluation() {
   const numDebug = typeof debugMarks === 'number' ? debugMarks : null;
   const numCode = typeof codeMarks === 'number' ? codeMarks : null;
   const debugCodeTotal =
-    numDebug !== null || numCode !== null ? (numDebug ?? 0) + (numCode ?? 0) : null;
+    numDebug !== null && numCode !== null ? numDebug + numCode : null;
   const finalScore =
-    predictScore !== null || numDebug !== null || numCode !== null
-      ? (predictScore ?? 0) + (numDebug ?? 0) + (numCode ?? 0)
+    predictScore !== null && numDebug !== null && numCode !== null
+      ? predictScore + numDebug + numCode
       : null;
 
   const hasDebugScore = savedDebugScore !== null;
   const hasCodeScore = savedCodeScore !== null;
   const isBothEvaluated = hasDebugScore && hasCodeScore;
+
+  const handleSavePredictOverride = async () => {
+    if (overrideInput === '') return;
+    const val = Number(overrideInput);
+    if (isNaN(val) || val < 0 || val > 30) {
+      setErrorMessage('Predict score must be a number between 0 and 30.');
+      return;
+    }
+    if (!overrideReasonInput.trim()) {
+      setErrorMessage('Please provide a reason for the manual Predict override.');
+      return;
+    }
+
+    setOverrideStatus('saving');
+    setErrorMessage(null);
+    try {
+      await updateTeamScores(teamId, {
+        predictScore: val,
+        predictScoreSource: 'MANUAL_OVERRIDE',
+        predictOverrideReason: overrideReasonInput.trim(),
+        judgeId: user?.judgeId,
+      });
+      setPredictScore(val);
+      setPredictSource('MANUAL_OVERRIDE');
+      setPredictOverrideReason(overrideReasonInput.trim());
+      setOverrideStatus('saved');
+      setShowOverrideModal(false);
+      setToast(`Predict score manually overridden to ${val}/30.`);
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: any) {
+      setOverrideStatus('error');
+      setErrorMessage(err.message || 'Failed to save predict override.');
+    }
+  };
 
   const handleUpdate = async () => {
     setSaveStatus('saving');
@@ -143,14 +193,10 @@ export default function Evaluation() {
       setSavedCodeScore(typeof codeMarks === 'number' ? codeMarks : null);
       setSaveStatus('saved');
       setToast('Evaluation updated. Leaderboard synchronized.');
-      setTimeout(() => {
-        setSaveStatus('idle');
-        setToast(null);
-      }, 3000);
+      setTimeout(() => setToast(null), 3000);
     } catch (err: any) {
-      console.error('[Evaluation] Save failed:', err);
       setSaveStatus('error');
-      setErrorMessage(err.message || 'Failed to save marks. Check assignment permissions.');
+      setErrorMessage(err.message || 'Failed to save evaluation.');
     }
   };
 
@@ -210,32 +256,119 @@ export default function Evaluation() {
 
         {/* Retained & Retrieved Evaluation Cards */}
         <div className="space-y-6">
-          {/* SECTION 1: PREDICT (READ ONLY) */}
+          {/* SECTION 1: PREDICT */}
           <div className="card-dark p-6 border border-dark-700 rounded-xl space-y-3 bg-dark-900/40">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
                 <h3 className="text-white font-bold text-sm tracking-wider uppercase font-mono">
                   1. PREDICT SCORE (STRIKE 1)
                 </h3>
               </div>
-              <span className="text-[11px] font-mono px-2.5 py-0.5 rounded border border-dark-600 bg-dark-800 text-slate-400 flex items-center gap-1">
-                <Lock className="w-3 h-3" /> AUTO-CALCULATED · READ ONLY
-              </span>
+              <div className="flex items-center gap-2">
+                {predictSource === 'MANUAL_OVERRIDE' ? (
+                  <span className="text-[11px] font-mono px-2.5 py-0.5 rounded border border-amber-500/40 bg-amber-950/30 text-amber-400 flex items-center gap-1 font-semibold">
+                    MANUAL OVERRIDE
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-mono px-2.5 py-0.5 rounded border border-dark-600 bg-dark-800 text-slate-400 flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> AUTO-CALCULATED
+                  </span>
+                )}
+                {(user?.role === 'organizer' || user?.role === 'judge') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOverrideInput(predictScore !== null ? String(predictScore) : '');
+                      setOverrideReasonInput(predictOverrideReason || '');
+                      setShowOverrideModal(!showOverrideModal);
+                    }}
+                    className="text-xs font-mono text-cyan-400 hover:text-cyan-300 underline font-semibold px-2 py-0.5 rounded bg-dark-800 border border-dark-700 hover:border-cyan-500/50 transition-colors"
+                  >
+                    {showOverrideModal ? 'Cancel Override' : 'Manual Override'}
+                  </button>
+                )}
+              </div>
             </div>
 
             <p className="text-slate-400 text-xs font-mono">
-              Computed automatically from participant's Strike 1 output predictions. No manual entry needed.
+              {predictSource === 'MANUAL_OVERRIDE'
+                ? `Manually adjusted. Reason: "${predictOverrideReason || 'Not specified'}"`
+                : "Computed automatically from participant's Strike 1 output predictions. No manual entry needed."}
             </p>
 
             <div className="flex items-center gap-3 pt-2">
               <div className="bg-dark-950 border border-dark-700 px-5 py-3 rounded-xl font-mono text-2xl font-black text-cyan-400">
-                {predictScore} <span className="text-slate-600 text-base font-normal">/ 30</span>
+                {predictScore !== null ? predictScore : '—'}{' '}
+                <span className="text-slate-600 text-base font-normal">/ 30</span>
               </div>
               <span className="text-xs font-mono text-slate-500">
-                (Strike 1 Output Prediction Total)
+                {predictScore !== null ? '(Strike 1 Output Prediction Total)' : '(Evaluation Pending)'}
               </span>
             </div>
+
+            {/* Manual Override Form */}
+            {showOverrideModal && (
+              <div className="mt-4 p-4 rounded-xl border border-amber-500/40 bg-dark-950/80 space-y-3 font-mono">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  <AlertCircle className="w-4 h-4" /> Strike 1 Manual Score Override
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Emergency scoring fallback. This replaces the canonical Strike 1 score and is recorded in the immutable audit log.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Predict Score (0 – 30):</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={30}
+                      value={overrideInput}
+                      onChange={(e) => setOverrideInput(e.target.value)}
+                      placeholder="e.g. 20"
+                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-cyan-400 focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Override Reason:</label>
+                    <input
+                      type="text"
+                      value={overrideReasonInput}
+                      onChange={(e) => setOverrideReasonInput(e.target.value)}
+                      placeholder="e.g. Evaluation fallback test case verification"
+                      className="w-full bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-cyan-500"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowOverrideModal(false)}
+                    className="btn-ghost text-xs py-1.5 px-3"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSavePredictOverride}
+                    disabled={overrideStatus === 'saving' || overrideInput === ''}
+                    className="btn-primary text-xs py-1.5 px-4 bg-amber-600 hover:bg-amber-500 text-dark-950 font-bold flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {overrideStatus === 'saving' ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-dark-950 border-t-transparent rounded-full animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        <span>Save Predict Override</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* SECTION 2: DEBUG MARKS (RETRIEVED FROM STRIKE 2) */}
@@ -260,28 +393,26 @@ export default function Evaluation() {
                 <button
                   type="button"
                   onClick={() => navigate(`/judge/team/${teamId}`)}
-                  className="text-xs font-mono text-slate-400 hover:text-indigo-300 flex items-center gap-1 underline underline-offset-4 ml-1"
+                  className="btn-ghost text-xs py-1 px-2 text-indigo-400 hover:text-indigo-300 flex items-center gap-1 font-mono"
                 >
+                  <span>Review Code</span>
                   <ExternalLink className="w-3 h-3" />
-                  Review in Strike 2
                 </button>
               </div>
             </div>
 
             <p className="text-slate-400 text-xs font-mono">
-              Combined score awarded for all 3 Debug challenges. Evaluated and saved at the end of Strike 2 review.
+              Score entered while reviewing the participant's Strike 2 debugging submission.
             </p>
 
-            <div className="flex items-center gap-4 flex-wrap pt-1">
-              <div className="bg-dark-950 border border-indigo-500/40 px-5 py-3 rounded-xl font-mono text-2xl font-black text-indigo-400">
-                {debugMarks !== '' ? debugMarks : '—'}{' '}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="bg-dark-950 border border-dark-700 px-5 py-3 rounded-xl font-mono text-2xl font-black text-indigo-400">
+                {hasDebugScore ? savedDebugScore : '—'}{' '}
                 <span className="text-slate-600 text-base font-normal">/ 60</span>
               </div>
-              <div className="text-xs font-mono text-slate-500">
-                {hasDebugScore
-                  ? 'Score is locked and automatically retrieved.'
-                  : 'Enter the debug score after reviewing the submissions in the Strike 2 tab.'}
-              </div>
+              <span className="text-xs font-mono text-slate-500">
+                {hasDebugScore ? '(Strike 2 Debug Total)' : '(Pending Evaluation)'}
+              </span>
             </div>
           </div>
 
@@ -307,28 +438,26 @@ export default function Evaluation() {
                 <button
                   type="button"
                   onClick={() => navigate(`/judge/team/${teamId}`)}
-                  className="text-xs font-mono text-slate-400 hover:text-purple-300 flex items-center gap-1 underline underline-offset-4 ml-1"
+                  className="btn-ghost text-xs py-1 px-2 text-purple-400 hover:text-purple-300 flex items-center gap-1 font-mono"
                 >
+                  <span>Review Code</span>
                   <ExternalLink className="w-3 h-3" />
-                  Review in Strike 3
                 </button>
               </div>
             </div>
 
             <p className="text-slate-400 text-xs font-mono">
-              Combined score awarded for all 3 Code challenges. Evaluated and saved at the end of Strike 3 review.
+              Score entered while reviewing the participant's Strike 3 final implementation.
             </p>
 
-            <div className="flex items-center gap-4 flex-wrap pt-1">
-              <div className="bg-dark-950 border border-purple-500/40 px-5 py-3 rounded-xl font-mono text-2xl font-black text-purple-400">
-                {codeMarks !== '' ? codeMarks : '—'}{' '}
+            <div className="flex items-center gap-3 pt-1">
+              <div className="bg-dark-950 border border-dark-700 px-5 py-3 rounded-xl font-mono text-2xl font-black text-purple-400">
+                {hasCodeScore ? savedCodeScore : '—'}{' '}
                 <span className="text-slate-600 text-base font-normal">/ 60</span>
               </div>
-              <div className="text-xs font-mono text-slate-500">
-                {hasCodeScore
-                  ? 'Score is locked and automatically retrieved.'
-                  : 'Enter the code score after reviewing the submissions in the Strike 3 tab.'}
-              </div>
+              <span className="text-xs font-mono text-slate-500">
+                {hasCodeScore ? '(Strike 3 Code Total)' : '(Pending Evaluation)'}
+              </span>
             </div>
           </div>
 
@@ -362,11 +491,14 @@ export default function Evaluation() {
                   FINAL COMPETITION SCORE
                 </span>
                 <div className="font-mono text-3xl font-black text-cyan-400 text-glow-cyan">
-                  {finalScore !== null ? finalScore : predictScore}{' '}
+                  {finalScore !== null ? finalScore : '—'}{' '}
                   <span className="text-slate-600 text-base font-normal">/ 150</span>
                 </div>
                 <p className="text-[11px] font-mono text-slate-500">
-                  {predictScore} (Predict) + {debugCodeTotal !== null ? debugCodeTotal : 0} (Debug + Code)
+                  {predictScore !== null ? predictScore : '—'} (Predict) +{' '}
+                  {numDebug !== null ? numDebug : '—'} (Debug) +{' '}
+                  {numCode !== null ? numCode : '—'} (Code) ={' '}
+                  {finalScore !== null ? `${finalScore} / 150` : '—'}
                 </p>
               </div>
             </div>

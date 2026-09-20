@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Layers, Smartphone, Monitor, Laptop, Wifi, WifiOff, AlertCircle, LogOut, XCircle } from 'lucide-react';
 import OrganizerLayout from '../../components/layout/OrganizerLayout';
 import type { Session, SessionRole } from '../../types/session';
+import { db } from '../../firebase/config';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { COLLECTIONS } from '../../firebase/firestore';
 
 const INITIAL_MOCK_SESSIONS: Session[] = [
   {
@@ -95,20 +98,86 @@ export default function SessionManagement() {
     setTimeout(() => setToast(null), 3000);
   };
 
+  // Real-time listener to Firestore /sessions
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, COLLECTIONS.SESSIONS),
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const liveSessions: Session[] = snapshot.docs.map((d) => {
+            const data = d.data();
+            const lastActive = data.lastHeartbeat || data.createdAt || new Date().toISOString();
+            const diffSec = Math.floor((Date.now() - new Date(lastActive).getTime()) / 1000);
+
+            // Stale threshold: 90 seconds (Safeguard 4)
+            let conn: 'online' | 'offline' | 'unstable' = data.connection || 'offline';
+            if (data.status === 'revoked' || data.status === 'expired') {
+              conn = 'offline';
+            } else if (diffSec > 90) {
+              conn = 'offline';
+            } else if (diffSec <= 90 && data.status === 'active') {
+              conn = 'online';
+            }
+
+            return {
+              sessionId: data.sessionId || d.id,
+              userId: data.userId || 'unknown',
+              role: (data.role || 'participant') as SessionRole,
+              teamId: data.teamId,
+              judgeId: data.judgeId,
+              device: data.device || 'Desktop',
+              connection: conn,
+              lastActive,
+              status: (data.status || 'active') as 'active' | 'expired' | 'revoked',
+            };
+          });
+
+          // Sort by lastActive descending
+          liveSessions.sort(
+            (a, b) => new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()
+          );
+          setSessions(liveSessions);
+        }
+      },
+      (err) => {
+        console.warn('[SessionManagement] Error listening to sessions collection:', err);
+      }
+    );
+    return () => unsub();
+  }, []);
+
   const filteredSessions = sessions.filter((s) => s.role === activeTab);
 
-  const handleForceLogout = (sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'expired', connection: 'offline' } : s))
-    );
-    showToast(`Session ${sessionId} forcefully logged out.`);
+  const handleForceLogout = async (sessionId: string) => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.SESSIONS, sessionId), {
+        status: 'expired',
+        connection: 'offline',
+        updatedAt: new Date().toISOString(),
+      });
+      showToast(`Session ${sessionId} forcefully logged out.`);
+    } catch {
+      setSessions((prev) =>
+        prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'expired', connection: 'offline' } : s))
+      );
+      showToast(`Session ${sessionId} forcefully logged out.`);
+    }
   };
 
-  const handleRevokeSession = (sessionId: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'revoked', connection: 'offline' } : s))
-    );
-    showToast(`Session ${sessionId} token permanently revoked.`);
+  const handleRevokeSession = async (sessionId: string) => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.SESSIONS, sessionId), {
+        status: 'revoked',
+        connection: 'offline',
+        revokedAt: new Date().toISOString(),
+      });
+      showToast(`Session ${sessionId} token permanently revoked.`);
+    } catch {
+      setSessions((prev) =>
+        prev.map((s) => (s.sessionId === sessionId ? { ...s, status: 'revoked', connection: 'offline' } : s))
+      );
+      showToast(`Session ${sessionId} token permanently revoked.`);
+    }
   };
 
   const formatLastActive = (iso: string) => {

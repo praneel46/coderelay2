@@ -45,6 +45,9 @@ const STRIKE_DURATIONS: Record<StrikeId, number> = {
   strike3: 20 * 60,  // 20 minutes (1200s)
 };
 
+import { sanitizeForFirestore } from '../../utils/sanitize';
+export { sanitizeForFirestore };
+
 export class FirebaseDataProvider implements IDataProvider {
   // ------------------------------------------------------------
   // Auth
@@ -288,14 +291,42 @@ export class FirebaseDataProvider implements IDataProvider {
     scores: {
       debugMarks?: number | null;
       codeMarks?: number | null;
-      predictScore?: number;
+      predictScore?: number | null;
+      predictScoreSource?: 'AUTO' | 'MANUAL_OVERRIDE';
+      predictOverrideReason?: string;
       judgeId?: string;
       note?: string;
       timing?: StrikeTiming;
       teamName?: string;
     }
   ): Promise<void> {
-    const canonicalTeamId = teamId.trim().toUpperCase();
+    const canonicalTeamId = (teamId || '').trim().toUpperCase();
+    if (!canonicalTeamId) {
+      throw new Error('updateTeamScores: teamId is required.');
+    }
+
+    // Explicit validation before any database action (Safeguard 1)
+    if (scores.debugMarks !== undefined && scores.debugMarks !== null) {
+      if (typeof scores.debugMarks !== 'number' || isNaN(scores.debugMarks) || scores.debugMarks < 0 || scores.debugMarks > 60) {
+        throw new Error(`Invalid debugMarks: ${scores.debugMarks}. Must be a valid number between 0 and 60.`);
+      }
+    }
+
+    if (scores.codeMarks !== undefined && scores.codeMarks !== null) {
+      if (typeof scores.codeMarks !== 'number' || isNaN(scores.codeMarks) || scores.codeMarks < 0 || scores.codeMarks > 60) {
+        throw new Error(`Invalid codeMarks: ${scores.codeMarks}. Must be a valid number between 0 and 60.`);
+      }
+    }
+
+    if (scores.predictScore !== undefined && scores.predictScore !== null) {
+      if (typeof scores.predictScore !== 'number' || isNaN(scores.predictScore) || scores.predictScore < 0 || scores.predictScore > 30) {
+        throw new Error(`Invalid predictScore: ${scores.predictScore}. Must be a valid number between 0 and 30.`);
+      }
+      if (scores.predictScoreSource === 'MANUAL_OVERRIDE' && !(scores.predictOverrideReason || '').trim()) {
+        throw new Error('Override reason is required for manual Predict score override.');
+      }
+    }
+
     const evalId = `eval_${canonicalTeamId}`;
     const evalRef = doc(db, COLLECTIONS.EVALUATIONS, evalId);
     const resultRef = doc(db, COLLECTIONS.RESULTS, canonicalTeamId);
@@ -331,59 +362,72 @@ export class FirebaseDataProvider implements IDataProvider {
       existingResult?.assignedJudgeId ||
       'J001';
 
-    // 3. Resolve Predict Score (preserve existing, or use incoming, never overwrite with 0)
-    let predict = scores.predictScore !== undefined ? scores.predictScore : null;
-    if (predict === null || predict === undefined) {
-      if (typeof existingResult?.predictScore === 'number' && existingResult.predictScore > 0) {
-        predict = existingResult.predictScore;
-      } else if (typeof existingEval?.predictScore === 'number' && existingEval.predictScore > 0) {
-        predict = existingEval.predictScore;
-      } else {
-        predict = existingResult?.predictScore ?? 0;
+    const nowIso = new Date().toISOString();
+
+    // 3. Resolve Predict Score (preserve existing, or use incoming; 0 is valid!)
+    let predict: number | null = null;
+    let predictSource: 'AUTO' | 'MANUAL_OVERRIDE' =
+      (existingResult as any)?.predictScoreSource || 'AUTO';
+    let overrideReason: string | null =
+      (existingResult as any)?.predictOverrideReason || null;
+    let overriddenBy: string | null =
+      (existingResult as any)?.predictOverriddenBy || null;
+    let overriddenAt: string | null =
+      (existingResult as any)?.predictOverriddenAt || null;
+
+    if (scores.predictScore !== undefined) {
+      predict = scores.predictScore;
+      if (scores.predictScoreSource === 'MANUAL_OVERRIDE') {
+        predictSource = 'MANUAL_OVERRIDE';
+        overrideReason = scores.predictOverrideReason?.trim() || 'Manual adjustment';
+        overriddenBy = auth.currentUser?.uid || authoritativeJudgeId;
+        overriddenAt = nowIso;
       }
+    } else if (typeof existingResult?.predictScore === 'number') {
+      predict = existingResult.predictScore;
+    } else if (typeof existingEval?.predictScore === 'number') {
+      predict = existingEval.predictScore;
     }
 
-    // 4. Resolve Debug and Code marks (preserve untouched marks)
-    const debug =
+    // 4. Resolve Debug and Code marks (preserve untouched marks; 0 is valid!)
+    const debug: number | null =
       scores.debugMarks !== undefined
         ? scores.debugMarks
-        : existingResult?.debugMarks !== undefined
+        : typeof existingResult?.debugMarks === 'number'
         ? existingResult.debugMarks
-        : existingEval?.debugMarks !== undefined
+        : typeof existingEval?.debugMarks === 'number'
         ? existingEval.debugMarks
         : null;
 
-    const code =
+    const code: number | null =
       scores.codeMarks !== undefined
         ? scores.codeMarks
-        : existingResult?.codeMarks !== undefined
+        : typeof existingResult?.codeMarks === 'number'
         ? existingResult.codeMarks
-        : existingEval?.codeMarks !== undefined
+        : typeof existingEval?.codeMarks === 'number'
         ? existingEval.codeMarks
         : null;
 
-    // 5. Aggregate calculated totals
-    const debugCodeTotal =
-      debug !== null || code !== null
-        ? (debug ?? 0) + (code ?? 0)
-        : null;
+    // 5. Aggregate calculated totals (Safeguard 5: Score State Matrix)
+    // Both debug and code must be present for debugCodeTotal
+    const debugCodeTotal: number | null =
+      debug !== null && code !== null ? debug + code : null;
 
-    const finalScore =
-      predict !== null || debug !== null || code !== null
-        ? (predict ?? 0) + (debug ?? 0) + (code ?? 0)
+    // Final score is ONLY calculated when ALL THREE are present. Otherwise null.
+    const finalScore: number | null =
+      predict !== null && debug !== null && code !== null
+        ? predict + debug + code
         : null;
 
     const evaluationStatus: EvaluationStatus =
       debug !== null && code !== null
         ? 'evaluated'
-        : debug !== null || code !== null
+        : predict !== null || debug !== null || code !== null
         ? 'in_progress'
         : (existingResult?.evaluationStatus || 'pending');
 
-    const nowIso = new Date().toISOString();
-
-    // Preserve participant submission completion timings strictly
-    const timingPayload: StrikeTiming = {
+    // 6. Preserve participant submission completion timings strictly (Bug 1 & Safeguard 2)
+    const timingPayload: Record<string, any> = {
       strike1CompletedAt:
         scores.timing?.strike1CompletedAt ||
         existingResult?.timing?.strike1CompletedAt ||
@@ -400,70 +444,86 @@ export class FirebaseDataProvider implements IDataProvider {
         scores.timing?.finalSubmittedAt ||
         existingResult?.timing?.finalSubmittedAt ||
         null,
-      totalElapsedSeconds:
-        scores.timing?.totalElapsedSeconds ??
-        existingResult?.timing?.totalElapsedSeconds,
     };
 
-    // 6. Write to /results/{teamId} (authoritative source for leaderboard & submissions monitor)
-    await setDoc(
-      resultRef,
-      {
-        teamId: canonicalTeamId,
-        teamName: scores.teamName || existingResult?.teamName || `Team ${canonicalTeamId}`,
-        assignedJudgeId: authoritativeJudgeId,
-        predictScore: predict,
-        debugMarks: debug,
-        codeMarks: code,
-        debugCodeTotal,
-        finalScore,
-        evaluationStatus,
-        timing: timingPayload,
-        evaluatedAt: nowIso,
-        ...(scores.debugMarks !== undefined ? { debugEvaluatedAt: nowIso } : {}),
-        ...(scores.codeMarks !== undefined ? { codeEvaluatedAt: nowIso } : {}),
-        updatedAt: nowIso,
-      },
-      { merge: true }
-    );
+    const elapsed =
+      scores.timing?.totalElapsedSeconds !== undefined
+        ? scores.timing.totalElapsedSeconds
+        : existingResult?.timing?.totalElapsedSeconds !== undefined
+        ? existingResult.timing.totalElapsedSeconds
+        : undefined;
 
-    // 7. Write to /evaluations/{evalId} (detailed evaluation document)
-    await setDoc(
-      evalRef,
-      {
-        evaluationId: evalId,
-        teamId: canonicalTeamId,
-        judgeId: authoritativeJudgeId,
-        predictScore: predict ?? 0,
-        debugMarks: debug,
-        codeMarks: code,
-        debugCodeTotal: debugCodeTotal ?? 0,
-        finalScore: finalScore ?? 0,
-        status: debug !== null && code !== null ? 'submitted' : 'in_progress',
-        evaluatedAt: nowIso,
-        updatedAt: nowIso,
-      },
-      { merge: true }
-    );
+    // Only attach totalElapsedSeconds if it is a valid finite number; never undefined
+    if (elapsed !== undefined && elapsed !== null && !isNaN(elapsed)) {
+      timingPayload.totalElapsedSeconds = elapsed;
+    }
 
-    // 8. Write immutable audit log to /auditLogs
+    // 7. Construct and sanitize /results/{teamId} payload
+    const resultDocData = sanitizeForFirestore({
+      teamId: canonicalTeamId,
+      teamName: scores.teamName || existingResult?.teamName || `Team ${canonicalTeamId}`,
+      assignedJudgeId: authoritativeJudgeId,
+      predictScore: predict,
+      predictScoreSource: predictSource,
+      ...(overrideReason ? { predictOverrideReason: overrideReason } : {}),
+      ...(overriddenBy ? { predictOverriddenBy: overriddenBy } : {}),
+      ...(overriddenAt ? { predictOverriddenAt: overriddenAt } : {}),
+      debugMarks: debug,
+      codeMarks: code,
+      debugCodeTotal,
+      finalScore,
+      evaluationStatus,
+      timing: timingPayload,
+      evaluatedAt: nowIso,
+      ...(scores.debugMarks !== undefined ? { debugEvaluatedAt: nowIso } : {}),
+      ...(scores.codeMarks !== undefined ? { codeEvaluatedAt: nowIso } : {}),
+      updatedAt: nowIso,
+    });
+
+    await setDoc(resultRef, resultDocData, { merge: true });
+
+    // 8. Construct and sanitize /evaluations/{evalId} payload
+    const evalDocData = sanitizeForFirestore({
+      evaluationId: evalId,
+      teamId: canonicalTeamId,
+      judgeId: authoritativeJudgeId,
+      predictScore: predict ?? null,
+      predictScoreSource: predictSource,
+      debugMarks: debug,
+      codeMarks: code,
+      debugCodeTotal,
+      finalScore,
+      status: debug !== null && code !== null ? 'submitted' : 'in_progress',
+      evaluatedAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    await setDoc(evalRef, evalDocData, { merge: true });
+
+    // 9. Write immutable audit log to /auditLogs
     try {
-      await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), {
+      const isOverride = scores.predictScoreSource === 'MANUAL_OVERRIDE';
+      const auditPayload = sanitizeForFirestore({
         logId: `audit_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        action: 'UPDATE_SCORES',
+        action: isOverride ? 'PREDICT_OVERRIDE' : 'UPDATE_SCORES',
         teamId: canonicalTeamId,
         judgeId: authoritativeJudgeId,
         actor: auth.currentUser?.uid || authoritativeJudgeId,
+        previousPredictScore: existingResult?.predictScore ?? null,
+        newPredictScore: predict,
         previousDebugMarks: existingResult?.debugMarks ?? null,
         newDebugMarks: debug,
         previousCodeMarks: existingResult?.codeMarks ?? null,
         newCodeMarks: code,
-        predictScore: predict,
         finalScore,
+        source: isOverride ? 'MANUAL_OVERRIDE' : 'JUDGE_INPUT',
+        reason: isOverride ? overrideReason : null,
         timestamp: nowIso,
         note:
           scores.note ||
-          (debug !== null && code !== null
+          (isOverride
+            ? `Predict score manually overridden to ${predict}/30: ${overrideReason}`
+            : debug !== null && code !== null
             ? 'Complete evaluation saved'
             : scores.debugMarks !== undefined
             ? `Debug score updated to ${scores.debugMarks}/60`
@@ -471,6 +531,8 @@ export class FirebaseDataProvider implements IDataProvider {
             ? `Code score updated to ${scores.codeMarks}/60`
             : 'Evaluation score adjusted'),
       });
+
+      await addDoc(collection(db, COLLECTIONS.AUDIT_LOGS), auditPayload);
     } catch (auditErr) {
       console.warn('[FirebaseDataProvider] Could not write audit log:', auditErr);
     }
@@ -507,13 +569,13 @@ export class FirebaseDataProvider implements IDataProvider {
   }
 
   getTeamEvaluation(teamId: string) {
-    // In Firebase mode, evaluations are synced real-time into the result/eval collections
+    // Return nulls for unscored fields rather than hardcoded scores
     return {
-      predictScore: 24,
+      predictScore: null,
       debugMarks: null,
       codeMarks: null,
-      debugCodeTotal: 0,
-      finalScore: 24,
+      debugCodeTotal: null,
+      finalScore: null,
       status: 'pending' as const,
     };
   }
@@ -524,7 +586,6 @@ export class FirebaseDataProvider implements IDataProvider {
       strike2CompletedAt: null,
       strike3CompletedAt: null,
       finalSubmittedAt: null,
-      totalElapsedSeconds: 0,
     };
   }
 }

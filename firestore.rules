@@ -247,21 +247,62 @@ service cloud.firestore {
     // ------------------------------------------------------------
     // Results & Leaderboard (/results/{teamId})
     // Leaderboard entries are readable by all authenticated users.
-    // Only Organizers (or scoring engine) can write results.
+    // Organizers retain full administrative correction authority.
+    // Judges can ONLY write scores within assigned teams and CANNOT
+    // modify timing or reassign judges. Participants CANNOT write.
     // ------------------------------------------------------------
     match /results/{teamId} {
       allow read: if isAuthenticated();
-      allow write: if isOrganizer() || isJudgeAssignedToTeam(teamId);
+
+      allow create: if isOrganizer() || (
+        isJudgeAssignedToTeam(teamId) &&
+        request.resource.data.teamId == teamId
+      );
+
+      allow update: if isOrganizer() || (
+        isJudgeAssignedToTeam(teamId) &&
+        request.resource.data.teamId == resource.data.teamId &&
+        (
+          !('assignedJudgeId' in resource.data) ||
+          !('assignedJudgeId' in request.resource.data) ||
+          request.resource.data.assignedJudgeId == resource.data.assignedJudgeId
+        ) &&
+        (
+          !('timing' in resource.data) ||
+          !('timing' in request.resource.data) ||
+          request.resource.data.timing == resource.data.timing
+        ) &&
+        (
+          request.resource.data.get('predictScore', null) == null ||
+          (request.resource.data.predictScore is number &&
+           request.resource.data.predictScore >= 0 &&
+           request.resource.data.predictScore <= 30)
+        ) &&
+        (
+          request.resource.data.get('debugMarks', null) == null ||
+          (request.resource.data.debugMarks is number &&
+           request.resource.data.debugMarks >= 0 &&
+           request.resource.data.debugMarks <= 60)
+        ) &&
+        (
+          request.resource.data.get('codeMarks', null) == null ||
+          (request.resource.data.codeMarks is number &&
+           request.resource.data.codeMarks >= 0 &&
+           request.resource.data.codeMarks <= 60)
+        )
+      );
+
+      allow delete: if isOrganizer();
     }
 
     // ------------------------------------------------------------
     // Sessions Collection (/sessions/{sessionId})
     // Tracks live user heartbeats and active devices.
-    // Users can write their own session. Organizers can manage all.
+    // Participant sessions created only by participants. Organizers manage all.
     // ------------------------------------------------------------
     match /sessions/{sessionId} {
       allow read: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid && request.resource.data.role == 'participant';
       allow update: if isOrganizer() || (isAuthenticated() && resource.data.userId == request.auth.uid);
       allow delete: if isOrganizer();
     }

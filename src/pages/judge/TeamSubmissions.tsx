@@ -46,10 +46,9 @@ export default function TeamSubmissions() {
   const [savedDebugScore, setSavedDebugScore] = useState<number | null>(teamEval.debugMarks);
   const [savedCodeScore, setSavedCodeScore] = useState<number | null>(teamEval.codeMarks);
 
+  const [predictSource, setPredictSource] = useState<'AUTO' | 'MANUAL_OVERRIDE'>('AUTO');
   const [debugSaveStatus, setDebugSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [codeSaveStatus, setCodeSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [debugSaved, setDebugSaved] = useState<boolean>(false);
-  const [codeSaved, setCodeSaved] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
@@ -62,21 +61,22 @@ export default function TeamSubmissions() {
       (snap) => {
         if (snap.exists()) {
           const d = snap.data();
-          if (typeof d.predictScore === 'number' && d.predictScore > 0) {
+          if (typeof d.predictScore === 'number') {
             setPredictScore(d.predictScore);
+          }
+          if (d.predictScoreSource) {
+            setPredictSource(d.predictScoreSource);
           }
           if (d.debugMarks !== undefined) {
             setSavedDebugScore(d.debugMarks);
             if (d.debugMarks !== null) {
               setDebugInput(d.debugMarks);
-              setDebugSaved(true);
             }
           }
           if (d.codeMarks !== undefined) {
             setSavedCodeScore(d.codeMarks);
             if (d.codeMarks !== null) {
               setCodeInput(d.codeMarks);
-              setCodeSaved(true);
             }
           }
         }
@@ -91,16 +91,16 @@ export default function TeamSubmissions() {
   // Context fallback sync
   useEffect(() => {
     const updated = getTeamEvaluation(teamId);
-    if (updated.predictScore) setPredictScore(updated.predictScore);
+    if (updated.predictScore !== null && updated.predictScore !== undefined) {
+      setPredictScore(updated.predictScore);
+    }
     if (updated.debugMarks !== null) {
       setDebugInput(updated.debugMarks);
       setSavedDebugScore(updated.debugMarks);
-      setDebugSaved(true);
     }
     if (updated.codeMarks !== null) {
       setCodeInput(updated.codeMarks);
       setSavedCodeScore(updated.codeMarks);
-      setCodeSaved(true);
     }
   }, [teamId, getTeamEvaluation]);
 
@@ -120,7 +120,6 @@ export default function TeamSubmissions() {
         judgeId: user?.judgeId,
       });
       setSavedDebugScore(score);
-      setDebugSaved(true);
       setDebugSaveStatus('saved');
       showToast(`Debug score saved (${score}/60). Leaderboard updated.`);
       setTimeout(() => setDebugSaveStatus('idle'), 3000);
@@ -142,7 +141,6 @@ export default function TeamSubmissions() {
         judgeId: user?.judgeId,
       });
       setSavedCodeScore(score);
-      setCodeSaved(true);
       setCodeSaveStatus('saved');
       showToast(`Code score saved (${score}/60). Leaderboard updated.`);
       setTimeout(() => setCodeSaveStatus('idle'), 3000);
@@ -258,8 +256,12 @@ export default function TeamSubmissions() {
                   {predictScore !== null ? `${predictScore} / 30` : '— / 30'}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 bg-dark-900 px-2 py-0.5 rounded border border-dark-700">
-                AUTO
+              <span className={`text-[10px] px-2 py-0.5 rounded border ${
+                predictSource === 'MANUAL_OVERRIDE'
+                  ? 'border-amber-500/40 bg-amber-950/40 text-amber-400 font-semibold'
+                  : 'text-slate-500 bg-dark-900 border-dark-700'
+              }`}>
+                {predictSource === 'MANUAL_OVERRIDE' ? 'OVERRIDE' : 'AUTO'}
               </span>
             </div>
 
@@ -429,7 +431,6 @@ export default function TeamSubmissions() {
                     onChange={(e) => {
                       const val = e.target.value === '' ? '' : Math.min(60, Math.max(0, Number(e.target.value)));
                       setDebugInput(val);
-                      setDebugSaved(false);
                     }}
                     placeholder="0"
                     className="w-full px-4 py-3 bg-dark-950 border border-indigo-500/50 rounded-xl text-white font-mono text-2xl font-black outline-none focus:border-indigo-400 transition-colors"
@@ -545,7 +546,6 @@ export default function TeamSubmissions() {
                     onChange={(e) => {
                       const val = e.target.value === '' ? '' : Math.min(60, Math.max(0, Number(e.target.value)));
                       setCodeInput(val);
-                      setCodeSaved(false);
                     }}
                     placeholder="0"
                     className="w-full px-4 py-3 bg-dark-950 border border-purple-500/50 rounded-xl text-white font-mono text-2xl font-black outline-none focus:border-purple-400 transition-colors"
