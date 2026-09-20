@@ -16,7 +16,7 @@ export default function StrikeComplete() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const { competitionState } = useCompetition();
+  const { competitionState, teamTimerDoc, isStrikeCompleted } = useCompetition();
 
   // Derive completedStrikeId from location state or competition state
   const completedStrikeId: StrikeId =
@@ -37,11 +37,16 @@ export default function StrikeComplete() {
 
   // When organizer starts the next strike, auto-navigate
   useEffect(() => {
-    if (competitionState.phase === 'active') {
-      if (competitionState.currentStrikeId === 'strike2') navigate('/participant/strike2', { replace: true });
-      else if (competitionState.currentStrikeId === 'strike3') navigate('/participant/strike3', { replace: true });
+    const teamStrike = teamTimerDoc?.currentStrikeId;
+    if (teamStrike && teamStrike !== completedStrikeId && teamTimerDoc?.[teamStrike]?.status === 'active' && !isStrikeCompleted(teamStrike)) {
+      if (teamStrike === 'strike2') { navigate('/participant/strike2', { replace: true }); return; }
+      if (teamStrike === 'strike3') { navigate('/participant/strike3', { replace: true }); return; }
     }
-  }, [competitionState.phase, competitionState.currentStrikeId, navigate]);
+    if (competitionState.phase === 'active' && competitionState.currentStrikeId && competitionState.currentStrikeId !== completedStrikeId && !isStrikeCompleted(competitionState.currentStrikeId)) {
+      if (competitionState.currentStrikeId === 'strike2') { navigate('/participant/strike2', { replace: true }); return; }
+      if (competitionState.currentStrikeId === 'strike3') { navigate('/participant/strike3', { replace: true }); return; }
+    }
+  }, [competitionState.phase, competitionState.currentStrikeId, teamTimerDoc, completedStrikeId, isStrikeCompleted, navigate]);
 
   return (
     <div className="min-h-screen bg-dark-950 flex flex-col items-center justify-center px-4 py-12 relative overflow-hidden bg-grid-pattern">

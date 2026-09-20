@@ -88,6 +88,9 @@ export class FirebaseDataProvider implements IDataProvider {
     const endTime = new Date(now.getTime() + durationSeconds * 1000).toISOString();
     const actorUid = auth.currentUser?.uid || 'organizer';
 
+    const strikeRank: Record<StrikeId, number> = { strike1: 1, strike2: 2, strike3: 3 };
+    const isBulk = !teamId;
+
     const startSingleTeam = async (rawId: string) => {
       const canonicalId = (rawId || '').trim().toUpperCase();
       if (!canonicalId) return;
@@ -96,7 +99,28 @@ export class FirebaseDataProvider implements IDataProvider {
       const snap = await getDoc(timerRef);
       const existing = snap.exists() ? (snap.data() as TeamTimerDoc) : null;
 
-      // Idempotency & double-click protection (Requirement 4 & 16)
+      // In bulk start mode (teamId omitted), enforce strict eligibility & non-interference:
+      if (isBulk && existing) {
+        // 1. NEVER reset completed teams
+        if (
+          existing.completedStrikes?.includes(strikeId) ||
+          existing[strikeId]?.status === 'completed' ||
+          existing.status === 'ROUND_2_COMPLETE'
+        ) {
+          return;
+        }
+
+        // 2. NEVER move teams backward
+        if (existing.currentStrikeId) {
+          const currentRank = strikeRank[existing.currentStrikeId] || 0;
+          const targetRank = strikeRank[strikeId] || 0;
+          if (currentRank > targetRank) {
+            return;
+          }
+        }
+      }
+
+      // 3. NEVER overwrite an already active timer with a future deadline (unless forceRestart)
       const existingTimer = existing?.[strikeId];
       if (
         !forceRestart &&
@@ -104,7 +128,6 @@ export class FirebaseDataProvider implements IDataProvider {
         existingTimer.status === 'active' &&
         new Date(existingTimer.endsAt).getTime() > Date.now()
       ) {
-        // Already active with future valid timer — return without overwriting!
         return;
       }
 
@@ -153,6 +176,9 @@ export class FirebaseDataProvider implements IDataProvider {
         const t = d.data();
         const tId = t.teamId || d.id;
         const statusUpper = (t.status || '').toUpperCase();
+        if (t.round2Eligible === false || statusUpper === 'DISQUALIFIED') {
+          return;
+        }
         if (
           t.round2Eligible === true ||
           statusUpper === 'QUALIFIED_FOR_ROUND_2' ||
@@ -244,6 +270,7 @@ export class FirebaseDataProvider implements IDataProvider {
 
     if (teamId) {
       await endSingleTeam(teamId);
+      return;
     } else {
       const timersSnap = await getDocs(collection(db, COLLECTIONS.TEAM_TIMERS));
       await Promise.all(timersSnap.docs.map((d) => endSingleTeam(d.id)));

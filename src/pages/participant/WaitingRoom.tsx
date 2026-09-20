@@ -102,22 +102,30 @@ function getStatusInfo(phase: string, completedStrikes: StrikeId[]): StatusInfo 
 export default function WaitingRoom() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const { competitionState } = useCompetition();
+  const { competitionState, teamTimerDoc, isStrikeCompleted } = useCompetition();
 
   const { phase, currentStrikeId, completedStrikes } = competitionState;
   const team = user?.team;
 
   // ── Auto-navigate when organizer starts a strike ──
   useEffect(() => {
-    if (phase === 'active') {
-      if (currentStrikeId === 'strike1') navigate('/participant/strike1', { replace: true });
-      else if (currentStrikeId === 'strike2') navigate('/participant/strike2', { replace: true });
-      else if (currentStrikeId === 'strike3') navigate('/participant/strike3', { replace: true });
+    // 1. Team-specific strike takes precedence
+    const teamStrike = teamTimerDoc?.currentStrikeId;
+    if (teamStrike && teamTimerDoc?.[teamStrike]?.status === 'active' && !isStrikeCompleted(teamStrike)) {
+      if (teamStrike === 'strike1') { navigate('/participant/strike1', { replace: true }); return; }
+      if (teamStrike === 'strike2') { navigate('/participant/strike2', { replace: true }); return; }
+      if (teamStrike === 'strike3') { navigate('/participant/strike3', { replace: true }); return; }
     }
-    if (phase === 'finished') {
+    // 2. Global active strike fallback
+    if (phase === 'active' && currentStrikeId && !isStrikeCompleted(currentStrikeId)) {
+      if (currentStrikeId === 'strike1') { navigate('/participant/strike1', { replace: true }); return; }
+      if (currentStrikeId === 'strike2') { navigate('/participant/strike2', { replace: true }); return; }
+      if (currentStrikeId === 'strike3') { navigate('/participant/strike3', { replace: true }); return; }
+    }
+    if (phase === 'finished' || teamTimerDoc?.status === 'ROUND_2_COMPLETE') {
       navigate('/participant/round-complete', { replace: true });
     }
-  }, [phase, currentStrikeId, navigate]);
+  }, [phase, currentStrikeId, teamTimerDoc, isStrikeCompleted, navigate]);
 
   const statusInfo = getStatusInfo(phase, completedStrikes);
 

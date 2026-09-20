@@ -111,21 +111,33 @@ service cloud.firestore {
       allow create, delete: if isOrganizer();
       allow update: if isOrganizer() || (
         isTeamMember(teamId) &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamId']) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['teamId', 'currentStrikeId']) &&
+        (!('strike1' in request.resource.data) || ('strike1' in resource.data)) &&
+        (!('strike2' in request.resource.data) || ('strike2' in resource.data)) &&
+        (!('strike3' in request.resource.data) || ('strike3' in resource.data)) &&
         (
-          !('strike1' in resource.data) || !('strike1' in request.resource.data) ||
-          (request.resource.data.strike1.endsAt == resource.data.strike1.endsAt &&
-           request.resource.data.strike1.durationSeconds == resource.data.strike1.durationSeconds)
+          !('strike1' in resource.data) || (
+            'strike1' in request.resource.data &&
+            request.resource.data.strike1.startedAt == resource.data.strike1.startedAt &&
+            request.resource.data.strike1.endsAt == resource.data.strike1.endsAt &&
+            request.resource.data.strike1.durationSeconds == resource.data.strike1.durationSeconds
+          )
         ) &&
         (
-          !('strike2' in resource.data) || !('strike2' in request.resource.data) ||
-          (request.resource.data.strike2.endsAt == resource.data.strike2.endsAt &&
-           request.resource.data.strike2.durationSeconds == resource.data.strike2.durationSeconds)
+          !('strike2' in resource.data) || (
+            'strike2' in request.resource.data &&
+            request.resource.data.strike2.startedAt == resource.data.strike2.startedAt &&
+            request.resource.data.strike2.endsAt == resource.data.strike2.endsAt &&
+            request.resource.data.strike2.durationSeconds == resource.data.strike2.durationSeconds
+          )
         ) &&
         (
-          !('strike3' in resource.data) || !('strike3' in request.resource.data) ||
-          (request.resource.data.strike3.endsAt == resource.data.strike3.endsAt &&
-           request.resource.data.strike3.durationSeconds == resource.data.strike3.durationSeconds)
+          !('strike3' in resource.data) || (
+            'strike3' in request.resource.data &&
+            request.resource.data.strike3.startedAt == resource.data.strike3.startedAt &&
+            request.resource.data.strike3.endsAt == resource.data.strike3.endsAt &&
+            request.resource.data.strike3.durationSeconds == resource.data.strike3.durationSeconds
+          )
         )
       );
     }

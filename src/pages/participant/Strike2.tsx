@@ -75,18 +75,16 @@ export default function Strike2() {
   const [timerExpired, setTimerExpired] = useState(false);
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
-  // Authoritative independent Strike 2 timer resolution
+  // Authoritative independent Strike 2 timer resolution:
+  // ONLY team-specific timer from Firestore (/teamTimers/{teamId}).
+  // Global activeStrike is NEVER used to manufacture or substitute participant countdown.
   const teamStrikeTimer = teamTimerDoc?.strike2 || (teamId ? competitionState.teamTimers?.[teamId]?.strike2 : undefined);
   const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
-    // Priority A: Team-specific timer from Firestore if valid and in future
+    // 1. Team-specific timer from Firestore if valid and in future
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
       return teamStrikeTimer.endsAt;
     }
-    // Priority B: Global activeStrike if valid and in future
-    if (activeStrike?.strikeId === 'strike2' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
-      return activeStrike.endsAt;
-    }
-    // Priority C: Check sessionStorage for this team's Strike 2 timer
+    // 2. Refresh persistence: Check sessionStorage for this team's authoritative strike timer
     if (teamId) {
       try {
         const storedEnds = sessionStorage.getItem(`vr2_strike_strike2_ends_${teamId}`);
@@ -98,20 +96,15 @@ export default function Strike2() {
     return null;
   });
 
-  // Sync effectiveEndsAt whenever fresh authoritative timer is delivered
+  // Sync effectiveEndsAt strictly when team's authoritative timer arrives
   useEffect(() => {
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
       setEffectiveEndsAt(teamStrikeTimer.endsAt);
       if (teamId) {
         try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, teamStrikeTimer.endsAt); } catch {}
       }
-    } else if (activeStrike?.strikeId === 'strike2' && activeStrike.endsAt && new Date(activeStrike.endsAt).getTime() > Date.now()) {
-      setEffectiveEndsAt(activeStrike.endsAt);
-      if (teamId) {
-        try { sessionStorage.setItem(`vr2_strike_strike2_ends_${teamId}`, activeStrike.endsAt); } catch {}
-      }
     }
-  }, [teamStrikeTimer?.endsAt, activeStrike?.endsAt, activeStrike?.strikeId, teamId]);
+  }, [teamStrikeTimer?.endsAt, teamId]);
 
   useEffect(() => {
     if (isStrikeCompleted('strike2')) {
@@ -120,10 +113,14 @@ export default function Strike2() {
     }
     if (phase === 'complete' && competitionState.completedStrikes.includes('strike2')) {
       navigate('/participant/strike-complete', { state: { completedStrikeId: 'strike2' }, replace: true });
-    } else if (phase !== 'active' || currentStrikeId !== 'strike2') {
-      navigate('/participant/waiting', { replace: true });
+    } else {
+      const isTeamActive = teamTimerDoc?.currentStrikeId === 'strike2' && teamTimerDoc?.strike2?.status === 'active';
+      const isGlobalActive = phase === 'active' && currentStrikeId === 'strike2';
+      if (!isTeamActive && !isGlobalActive) {
+        navigate('/participant/waiting', { replace: true });
+      }
     }
-  }, [phase, currentStrikeId, competitionState.completedStrikes, isStrikeCompleted, navigate]);
+  }, [phase, currentStrikeId, teamTimerDoc, competitionState.completedStrikes, isStrikeCompleted, navigate]);
 
   const handleTimerExpired = useCallback(async () => {
     setTimerExpired(true);
@@ -160,7 +157,9 @@ export default function Strike2() {
     isLockedOut,
     dismissModal,
   } = useAntiCheat({
-    enabled: phase === 'active' && currentStrikeId === 'strike2',
+    enabled:
+      (phase === 'active' && currentStrikeId === 'strike2') ||
+      (teamTimerDoc?.currentStrikeId === 'strike2' && teamTimerDoc?.strike2?.status === 'active'),
     teamId: user?.team?.teamId || '',
     strikeId: 'strike2',
     onAutoSubmit: handleAutoSubmit,
