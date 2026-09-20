@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Wifi, WifiOff, RefreshCw, Eye, Lock, Monitor, Smartphone, Laptop, ShieldAlert, AlertTriangle } from 'lucide-react';
 import OrganizerLayout from '../../components/layout/OrganizerLayout';
-import { MOCK_TEAMS } from '../../data/mock-teams';
+import type { Team } from '../../types/competition';
 import { useCompetition } from '../../context/CompetitionContext';
 import { db } from '../../firebase/config';
 import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
@@ -57,6 +57,43 @@ export default function LiveMonitoring() {
   const [filter, setFilter] = useState<Filter>('all');
   const [toast, setToast] = useState<string | null>(null);
   const [violations, setViolations] = useState<LiveViolation[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+
+  // Subscribe to real-time teams collection from Firestore
+  React.useEffect(() => {
+    try {
+      const q = query(collection(db, 'teams'), orderBy('teamId', 'asc'));
+      const unsub = onSnapshot(
+        q,
+        (snapshot) => {
+          if (!snapshot.empty) {
+            const list: Team[] = snapshot.docs.map((docSnap) => {
+              const d = docSnap.data();
+              return {
+                teamId: d.teamId || docSnap.id,
+                teamName: d.teamName || `Team ${docSnap.id}`,
+                accessCode: '••••••••',
+                status: d.status || 'QUALIFIED_FOR_ROUND_2',
+                round2Eligible: d.round2Eligible ?? true,
+                members: [
+                  { index: 1, name: d.member1?.name || d.members?.member1 || 'Member 1' },
+                  { index: 2, name: d.member2?.name || d.members?.member2 || 'Member 2' },
+                  { index: 3, name: d.member3?.name || d.members?.member3 || 'Member 3' },
+                ],
+              };
+            });
+            setTeams(list);
+          }
+        },
+        (err) => {
+          console.warn('[LiveMonitoring] Teams subscription error:', err);
+        }
+      );
+      return () => unsub();
+    } catch (e) {
+      console.warn('[LiveMonitoring] Error establishing teams listener:', e);
+    }
+  }, []);
 
   // Subscribe to real-time anti-cheat violations feed from Firestore
   React.useEffect(() => {
@@ -99,7 +136,7 @@ export default function LiveMonitoring() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const filtered = MOCK_TEAMS.filter((t) => {
+  const filtered = teams.filter((t) => {
     if (filter === 'connected') return MOCK_CONNECTION_STATUS[t.teamId] === 'connected';
     if (filter === 'offline') return MOCK_CONNECTION_STATUS[t.teamId] === 'offline';
     return true;

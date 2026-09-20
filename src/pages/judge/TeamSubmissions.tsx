@@ -14,7 +14,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import JudgeLayout from '../../components/layout/JudgeLayout';
-import { MOCK_TEAMS } from '../../data/mock-teams';
 import { db } from '../../firebase/config';
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
@@ -49,6 +48,8 @@ export default function TeamSubmissions() {
 
   const [debugSaveStatus, setDebugSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [codeSaveStatus, setCodeSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [debugSaved, setDebugSaved] = useState<boolean>(false);
+  const [codeSaved, setCodeSaved] = useState<boolean>(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const [toast, setToast] = useState<string | null>(null);
@@ -156,16 +157,11 @@ export default function TeamSubmissions() {
     teamId: string;
     teamName: string;
     members: { name: string }[];
-  }>(() => {
-    const found = MOCK_TEAMS.find((t) => t.teamId === teamId);
-    return (
-      found || {
-        teamId: teamId || 'CRL-0000',
-        teamName: `Team ${teamId}`,
-        members: [{ name: 'M1' }, { name: 'M2' }, { name: 'M3' }],
-      }
-    );
-  });
+  }>(() => ({
+    teamId: teamId || 'CRL-0000',
+    teamName: teamId ? `Team ${teamId}` : 'Team CRL-0000',
+    members: [{ name: 'Member 1' }, { name: 'Member 2' }, { name: 'Member 3' }],
+  }));
 
   useEffect(() => {
     if (!teamId) return;

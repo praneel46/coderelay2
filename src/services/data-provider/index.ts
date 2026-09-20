@@ -1,17 +1,15 @@
 // ============================================================
 // VIGYANTRA 2026 — CODE RELAY
 // Data Provider Factory & Active Instance
+//
+// Production strictly uses FirebaseDataProvider (Firebase Auth +
+// Cloud Firestore + App Check). MockDataProvider is quarantined
+// from production bundle to guarantee zero credential leakage.
 // ============================================================
 
 import type { IDataProvider } from './types';
-import { MockDataProvider } from './MockDataProvider';
 import { FirebaseDataProvider } from './FirebaseDataProvider';
 
-const providerMode = import.meta.env.VITE_DATA_PROVIDER || 'mock';
-
-export const dataProvider: IDataProvider =
-  providerMode === 'firebase'
-    ? new FirebaseDataProvider()
-    : new MockDataProvider();
+export const dataProvider: IDataProvider = new FirebaseDataProvider();
 
 export * from './types';

@@ -10,7 +10,6 @@ import type { Submission, StrikeId } from '../../types/competition';
 import type { RankEntry, StrikeTiming, EvaluationStatus } from '../../types/results';
 import type { EvaluationAuditEntry } from '../../types/judge';
 import type { AuthUser } from '../../context/AuthContext';
-import { validateParticipantCredentials } from '../../data/mock-teams';
 import {
   MOCK_INITIAL_STATE,
   createMockStrike1State,
@@ -41,56 +40,16 @@ function saveToStorage<T>(key: string, value: T): void {
 }
 
 export class MockDataProvider implements IDataProvider {
-  // ------------------------------------------------------------
-  // Auth
-  // ------------------------------------------------------------
-  async loginParticipant(teamId: string, accessCode: string): Promise<AuthUser> {
-    await new Promise((r) => setTimeout(r, 400));
-    const team = validateParticipantCredentials(teamId, accessCode);
-    if (!team) {
-      throw new Error('Invalid Team ID or Access Code.');
-    }
-    const user: AuthUser = {
-      role: 'participant',
-      team,
-      activeMember: team.members[0],
-    };
-    sessionStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    return user;
+  async loginParticipant(): Promise<AuthUser> {
+    throw new Error('Mock authentication is disabled. Please use official Firebase Auth.');
   }
 
-  async loginOrganizer(password?: string): Promise<AuthUser> {
-    await new Promise((r) => setTimeout(r, 400));
-    if (password && password !== 'organizer2026') {
-      throw new Error('Invalid organizer credentials.');
-    }
-    const user: AuthUser = { role: 'organizer', isOrganizer: true };
-    sessionStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    return user;
+  async loginOrganizer(): Promise<AuthUser> {
+    throw new Error('Mock authentication is disabled. Please use official Firebase Google Auth.');
   }
 
-  async loginJudge(judgeId: string, password: string): Promise<AuthUser> {
-    await new Promise((r) => setTimeout(r, 400));
-    const judgeProfiles: Record<string, { name: string }> = {
-      J001: { name: 'Dr. Anil Krishnan' },
-      J002: { name: 'Prof. Sunita Menon' },
-      J003: { name: 'Mr. Ravi Tiwari' },
-      J004: { name: 'Judge 004' },
-      J005: { name: 'Judge 005' },
-      J006: { name: 'Judge 006' },
-    };
-    const normalizedId = judgeId.trim().toUpperCase();
-    const judge = judgeProfiles[normalizedId];
-    if (!judge || !password.trim()) {
-      throw new Error(`Invalid Judge ID (${judgeId}) or password.`);
-    }
-    const user: AuthUser = {
-      role: 'judge',
-      judgeId,
-      judgeName: judge.name,
-    };
-    sessionStorage.setItem(AUTH_KEY, JSON.stringify(user));
-    return user;
+  async loginJudge(): Promise<AuthUser> {
+    throw new Error('Mock authentication is disabled. Please use official Firebase Judge Auth.');
   }
 
   async logout(): Promise<void> {

@@ -34,4 +34,5 @@ service-account*.json
 *credentials*.json
 scripts/secrets/*
 *.csv
+!TEST_MATRIX.csv
 temp-*

@@ -32,9 +32,8 @@ import type { Submission } from '../types/competition';
 import type { RankEntry, EvaluationStatus } from '../types/results';
 import {
   rankTeamsWithTieBreak,
-  calculatePredictScore,
   extractStrikeTimings,
-} from '../services/submission-monitor';
+} from '../services/leaderboard-ranking';
 
 // ----------------------------------------------------------------
 // Collection References
@@ -49,7 +48,6 @@ export const COLLECTIONS = {
   SESSIONS: 'sessions',
   RESULTS: 'results',
   AUDIT_LOGS: 'auditLogs',
-  PRIVATE_ANSWERS: 'private_answers',
 } as const;
 
 // ----------------------------------------------------------------
@@ -117,14 +115,8 @@ export function subscribeToLeaderboard(
       const d = resultsMap.get(team.teamId);
       const teamSubs = submissionsByTeam.get(team.teamId) || [];
 
-      // If predictScore is in results, use it; otherwise compute from submissions if available
-      let predictScore: number | null = typeof d?.predictScore === 'number' ? d.predictScore : null;
-      if ((predictScore === null || predictScore === 0) && teamSubs.length > 0) {
-        const computed = calculatePredictScore(teamSubs, null);
-        if (computed !== null) {
-          predictScore = computed;
-        }
-      }
+      // Authoritative predictScore comes exclusively from /results/{teamId}
+      const predictScore: number | null = typeof d?.predictScore === 'number' ? d.predictScore : null;
 
       const debugMarks = d?.debugMarks ?? null;
       const codeMarks = d?.codeMarks ?? null;

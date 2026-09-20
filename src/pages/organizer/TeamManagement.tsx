@@ -26,7 +26,6 @@ import {
   Check,
 } from 'lucide-react';
 import OrganizerLayout from '../../components/layout/OrganizerLayout';
-import { MOCK_TEAMS } from '../../data/mock-teams';
 import type { Team, TeamStatus } from '../../types/competition';
 import { db } from '../../firebase/config';
 import {
@@ -79,7 +78,7 @@ interface ParsedQualifierRow {
 }
 
 export default function TeamManagement() {
-  const [teams, setTeams] = useState<Team[]>(MOCK_TEAMS);
+  const [teams, setTeams] = useState<Team[]>([]);
   const [activeTab, setActiveTab] = useState<ViewTab>('all');
   const [statusFilter, setStatusFilter] = useState<FilterStatus>('ALL');
   const [search, setSearch] = useState('');

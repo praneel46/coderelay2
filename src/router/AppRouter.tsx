@@ -2,7 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-// Participant Pages
+// Participant Pages (Directly bundled for instant load)
 import Login from '../pages/participant/Login';
 import WaitingRoom from '../pages/participant/WaitingRoom';
 import Strike1 from '../pages/participant/Strike1';
@@ -11,23 +11,23 @@ import Strike3 from '../pages/participant/Strike3';
 import StrikeComplete from '../pages/participant/StrikeComplete';
 import RoundComplete from '../pages/participant/RoundComplete';
 
-// Organizer Pages
-import OrganizerLogin from '../pages/organizer/OrganizerLogin';
-import Overview from '../pages/organizer/Overview';
-import RoundControl from '../pages/organizer/RoundControl';
-import TeamManagement from '../pages/organizer/TeamManagement';
-import JudgeManagement from '../pages/organizer/JudgeManagement';
-import LiveMonitoring from '../pages/organizer/LiveMonitoring';
-import Submissions from '../pages/organizer/Submissions';
-import SessionManagement from '../pages/organizer/SessionManagement';
-import SystemStatus from '../pages/organizer/SystemStatus';
-import Results from '../pages/organizer/Results';
+// Organizer Pages (Isolated chunk via dynamic import)
+const OrganizerLogin = React.lazy(() => import('../pages/organizer/OrganizerLogin'));
+const Overview = React.lazy(() => import('../pages/organizer/Overview'));
+const RoundControl = React.lazy(() => import('../pages/organizer/RoundControl'));
+const TeamManagement = React.lazy(() => import('../pages/organizer/TeamManagement'));
+const JudgeManagement = React.lazy(() => import('../pages/organizer/JudgeManagement'));
+const LiveMonitoring = React.lazy(() => import('../pages/organizer/LiveMonitoring'));
+const Submissions = React.lazy(() => import('../pages/organizer/Submissions'));
+const SessionManagement = React.lazy(() => import('../pages/organizer/SessionManagement'));
+const SystemStatus = React.lazy(() => import('../pages/organizer/SystemStatus'));
+const Results = React.lazy(() => import('../pages/organizer/Results'));
 
-// Judge Pages
-import JudgeLogin from '../pages/judge/JudgeLogin';
-import AssignedTeams from '../pages/judge/AssignedTeams';
-import TeamSubmissions from '../pages/judge/TeamSubmissions';
-import Evaluation from '../pages/judge/Evaluation';
+// Judge Pages (Isolated chunk via dynamic import)
+const JudgeLogin = React.lazy(() => import('../pages/judge/JudgeLogin'));
+const AssignedTeams = React.lazy(() => import('../pages/judge/AssignedTeams'));
+const TeamSubmissions = React.lazy(() => import('../pages/judge/TeamSubmissions'));
+const Evaluation = React.lazy(() => import('../pages/judge/Evaluation'));
 
 // Protected Route wrapper
 interface ProtectedRouteProps {
@@ -58,9 +58,16 @@ function ProtectedRoute({ children, allowedRole }: ProtectedRouteProps) {
 export default function AppRouter() {
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Default Route */}
-        <Route path="/" element={<Navigate to="/participant/login" replace />} />
+      <React.Suspense
+        fallback={
+          <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        }
+      >
+        <Routes>
+          {/* Default Route */}
+          <Route path="/" element={<Navigate to="/participant/login" replace />} />
 
         {/* Participant Routes */}
         <Route path="/participant/login" element={<Login />} />
@@ -221,6 +228,7 @@ export default function AppRouter() {
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/participant/login" replace />} />
       </Routes>
+      </React.Suspense>
     </BrowserRouter>
   );
 }
