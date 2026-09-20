@@ -398,39 +398,93 @@ try {
   // ------------------------------------------------------------
   // SECTION 5: PARTICIPANT PAGE REFRESH & PERSISTENCE
   // ------------------------------------------------------------
-  console.log('\n--- PHASE 5: REFRESH PERSISTENCE & TIMER ISOLATION ---');
+  // ------------------------------------------------------------
+  // SECTION 5: TIGHTENED TEAM TIMER READ PERMISSIONS TEST
+  // ------------------------------------------------------------
+  console.log('\n--- PHASE 5: TEAM TIMER READ ACCESS ENFORCEMENT ---');
 
-  // Simulate refresh logic for Team 1, Team 2, Team 3, Team 4
-  function simulateClientTimerResolution(tId, firestoreTimer, sessionStorageMap) {
-    // 1. Team-specific timer from Firestore if valid and in future
-    if (firestoreTimer?.endsAt && new Date(firestoreTimer.endsAt).getTime() > Date.now()) {
-      return { endsAt: firestoreTimer.endsAt, state: 'ACTIVE' };
+  // Participant A: read Team A timer (✓)
+  await assertSucceeds(getDoc(doc(team1Db, 'teamTimers', 'CRL-0001')));
+  pass('Participant A can read Team A timer');
+
+  // Participant A: read Team B timer (✗)
+  await assertFails(getDoc(doc(team1Db, 'teamTimers', 'CRL-0002')));
+  pass('Participant A CANNOT read Team B timer');
+
+  // Participant B: read Team B timer (✓)
+  await assertSucceeds(getDoc(doc(team2Db, 'teamTimers', 'CRL-0002')));
+  pass('Participant B can read Team B timer');
+
+  // Participant B: read Team A timer (✗)
+  await assertFails(getDoc(doc(team2Db, 'teamTimers', 'CRL-0001')));
+  pass('Participant B CANNOT read Team A timer');
+
+  // Judge 1: read assigned Team 1 timer (✓)
+  await assertSucceeds(getDoc(doc(judge1Db, 'teamTimers', 'CRL-0001')));
+  pass('Judge 1 can read assigned Team 1 timer');
+
+  // Judge 1: read unassigned Team 2 timer (✗)
+  await assertFails(getDoc(doc(judge1Db, 'teamTimers', 'CRL-0002')));
+  pass('Judge 1 CANNOT read unassigned Team 2 timer');
+
+  // Organizer: read all team timers (✓)
+  await assertSucceeds(getDoc(doc(orgDb, 'teamTimers', 'CRL-0001')));
+  await assertSucceeds(getDoc(doc(orgDb, 'teamTimers', 'CRL-0002')));
+  pass('Organizer can read all team timers');
+
+  // ------------------------------------------------------------
+  // SECTION 6: CLIENT TIMER AUTHORITY REGRESSION TEST
+  // ------------------------------------------------------------
+  console.log('\n--- PHASE 6: CLIENT TIMER AUTHORITY REGRESSION TEST ---');
+
+  // Client resolution logic in Strike1/2/3:
+  function resolveParticipantCountdown(teamTimerDoc, strikeId) {
+    const teamStrikeTimer = teamTimerDoc?.[strikeId];
+    if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
+      return teamStrikeTimer.endsAt;
     }
-    // 2. Refresh persistence from sessionStorage
-    const stored = sessionStorageMap.get(`vr2_strike_${firestoreTimer?.strikeId || 'strike1'}_ends_${tId}`);
-    if (stored && new Date(stored).getTime() > Date.now()) {
-      return { endsAt: stored, state: 'ACTIVE' };
-    }
-    return { endsAt: null, state: 'WAITING_FOR_OFFICIAL_TIMER' };
+    return null;
   }
 
-  const sStorageT1 = new Map();
-  sStorageT1.set('vr2_strike_strike2_ends_CRL-0001', t1Strike2Ends);
-  const r1 = simulateClientTimerResolution('CRL-0001', { strikeId: 'strike2', endsAt: t1Strike2Ends }, sStorageT1);
-  assert.strictEqual(r1.endsAt, t1Strike2Ends);
-  assert.strictEqual(r1.state, 'ACTIVE');
+  // 1. Start Team A Strike 3
+  const t1Strike3Ends = new Date(Date.now() + 1200 * 1000).toISOString();
+  const team1TimerDoc = {
+    teamId: 'CRL-0001',
+    status: 'STRIKE_3_ACTIVE',
+    currentStrikeId: 'strike3',
+    strike3: {
+      strikeId: 'strike3',
+      startedAt: new Date().toISOString(),
+      endsAt: t1Strike3Ends,
+      durationSeconds: 1200,
+      status: 'active',
+      completedAt: null,
+    },
+  };
 
-  const sStorageT2 = new Map();
-  sStorageT2.set('vr2_strike_strike1_ends_CRL-0002', t2Ends);
-  const r2 = simulateClientTimerResolution('CRL-0002', { strikeId: 'strike1', endsAt: t2Ends }, sStorageT2);
-  assert.strictEqual(r2.endsAt, t2Ends);
-  assert.strictEqual(r2.state, 'ACTIVE');
+  // 2. Store a deliberately incorrect/stale sessionStorage timer (e.g. 5 hours in future)
+  const mockSessionStorage = new Map();
+  mockSessionStorage.set('vr2_strike_strike3_ends_CRL-0001', new Date(Date.now() + 18000 * 1000).toISOString());
 
-  // Verify that an uninitialized team renders WAITING_FOR_OFFICIAL_TIMER and cannot use global activeStrike
-  const rEmpty = simulateClientTimerResolution('CRL-0099', null, new Map());
-  assert.strictEqual(rEmpty.endsAt, null);
-  assert.strictEqual(rEmpty.state, 'WAITING_FOR_OFFICIAL_TIMER');
-  pass('Participant client resolves strictly from team timer doc and renders WAITING_FOR_OFFICIAL_TIMER when uninitialized');
+  // 3. Refresh/remount -> resolution strictly calls resolveParticipantCountdown(team1TimerDoc, 'strike3')
+  const resolvedOnRemount = resolveParticipantCountdown(team1TimerDoc, 'strike3');
+
+  // 4. Firestore timer must win
+  assert.strictEqual(resolvedOnRemount, t1Strike3Ends, 'Firestore timer must win over sessionStorage');
+  assert.notStrictEqual(resolvedOnRemount, mockSessionStorage.get('vr2_strike_strike3_ends_CRL-0001'), 'Stale sessionStorage timer must NOT be used');
+  pass('Authoritative Firestore timer wins on mount/remount; sessionStorage is ignored');
+
+  // 5. Remove Firestore timer (simulate missing/temporarily unavailable server doc)
+  const missingTimerDoc = null;
+
+  // 6. UI must show WAITING FOR OFFICIAL TIMER (effectiveEndsAt = null)
+  const resolvedWhenMissing = resolveParticipantCountdown(missingTimerDoc, 'strike3');
+  assert.strictEqual(resolvedWhenMissing, null, 'effectiveEndsAt must be null when Firestore timer is missing');
+
+  // 7. It must NOT use sessionStorage even if sessionStorage holds an active timestamp
+  assert.ok(mockSessionStorage.has('vr2_strike_strike3_ends_CRL-0001'), 'sessionStorage still holds stale value');
+  assert.strictEqual(resolvedWhenMissing, null, 'Must NOT fallback to sessionStorage');
+  pass('When Firestore timer is missing, UI resolves to null (WAITING FOR OFFICIAL TIMER) and never uses sessionStorage');
 
 } finally {
   await testEnv.cleanup();

@@ -275,43 +275,32 @@ export default function Strike1() {
     onStrikeTimerExpired,
   } = useCompetition();
 
-  const { phase, currentStrikeId, activeStrike } = competitionState;
-  const teamId = user?.team?.teamId;
+  const { phase, currentStrikeId } = competitionState;
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const [selections, setSelections] = useState<Record<string, string>>({});
   const [timerExpired, setTimerExpired] = useState(false);
   const [showEarlySubmitConfirm, setShowEarlySubmitConfirm] = useState(false);
 
   // Authoritative independent Strike 1 timer resolution:
-  // ONLY team-specific timer from Firestore (/teamTimers/{teamId}).
-  // Global activeStrike is NEVER used to manufacture or substitute participant countdown.
-  const teamStrikeTimer = teamTimerDoc?.strike1 || (teamId ? competitionState.teamTimers?.[teamId]?.strike1 : undefined);
+  // The ONLY authoritative participant countdown source is /teamTimers/{teamId}.
+  // Specifically: teamTimerDoc?.strike1?.endsAt.
+  // Neither sessionStorage, localStorage, nor global activeStrike is ever used.
+  const teamStrikeTimer = teamTimerDoc?.strike1;
   const [effectiveEndsAt, setEffectiveEndsAt] = useState<string | null>(() => {
-    // 1. Team-specific timer from Firestore if valid and in future
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
       return teamStrikeTimer.endsAt;
-    }
-    // 2. Refresh persistence: Check sessionStorage for this team's authoritative strike timer
-    if (teamId) {
-      try {
-        const storedEnds = sessionStorage.getItem(`vr2_strike_strike1_ends_${teamId}`);
-        if (storedEnds && new Date(storedEnds).getTime() > Date.now()) {
-          return storedEnds;
-        }
-      } catch {}
     }
     return null;
   });
 
-  // Sync effectiveEndsAt strictly when team's authoritative timer arrives
+  // Sync effectiveEndsAt strictly when team's authoritative Firestore timer arrives or changes
   useEffect(() => {
     if (teamStrikeTimer?.endsAt && new Date(teamStrikeTimer.endsAt).getTime() > Date.now()) {
       setEffectiveEndsAt(teamStrikeTimer.endsAt);
-      if (teamId) {
-        try { sessionStorage.setItem(`vr2_strike_strike1_ends_${teamId}`, teamStrikeTimer.endsAt); } catch {}
-      }
+    } else {
+      setEffectiveEndsAt(null);
     }
-  }, [teamStrikeTimer?.endsAt, teamId]);
+  }, [teamStrikeTimer?.endsAt]);
 
   // ── Guard: strike already completed or wrong phase → waiting room ──
   useEffect(() => {

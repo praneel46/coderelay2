@@ -107,7 +107,7 @@ service cloud.firestore {
     // Participants CANNOT mutate endsAt, startedAt, durationSeconds, or other teams' timers.
     // ------------------------------------------------------------
     match /teamTimers/{teamId} {
-      allow read: if isAuthenticated();
+      allow read: if isOrganizer() || isTeamMember(teamId) || isJudgeAssignedToTeam(teamId);
       allow create, delete: if isOrganizer();
       allow update: if isOrganizer() || (
         isTeamMember(teamId) &&
