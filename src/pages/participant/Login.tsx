@@ -19,6 +19,37 @@ export default function ParticipantLogin() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Client-side keyboard deterrence (F12, DevTools shortcuts, View Source)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Intercept F12
+      if (e.key === 'F12') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C (or Cmd on Mac)
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      // Intercept Ctrl+U / Cmd+U (View Source)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   // Redirect if already authenticated as participant
   useEffect(() => {
     if (!isLoading && isAuthenticated && user?.role === 'participant') {
@@ -56,7 +87,7 @@ export default function ParticipantLogin() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col items-center justify-between px-4 py-4 sm:py-8 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
+      className="min-h-screen w-full flex flex-col items-center justify-center px-4 py-6 sm:py-10 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
       style={{
         backgroundImage: "url('/images/login-bg.jpg')",
         backgroundColor: '#020409',
@@ -70,18 +101,18 @@ export default function ParticipantLogin() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 text-center pt-2 sm:pt-4 w-full max-w-full overflow-hidden flex flex-col items-center"
+        className="relative z-10 text-center w-full max-w-full overflow-hidden flex flex-col items-center mb-3 sm:mb-4"
       >
-        {/* Event/Brand Identifier (Small) */}
-        <p className="text-[11px] sm:text-xs font-mono tracking-[0.35em] uppercase text-slate-400 font-medium whitespace-nowrap">
-          <span className="text-slate-200 font-semibold">VIGYANTRA</span>
-          <span className="text-cyan-400 font-bold ml-1.5">2026</span>
-        </p>
+        {/* Event/Brand Identifier */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm md:text-base font-mono tracking-[0.35em] sm:tracking-[0.45em] uppercase text-slate-300 font-semibold whitespace-nowrap">
+          <span className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">VIGYANTRA</span>
+          <span className="text-cyan-400 font-extrabold drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]">'26</span>
+        </div>
 
-        {/* Main Hero Title (Large, Bold, Futuristic) */}
-        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-[0.12em] sm:tracking-[0.18em] uppercase leading-none my-2 sm:my-3 whitespace-nowrap flex items-center justify-center">
-          <span className="text-white text-glow-white">CODE</span>
-          <span className="text-cyan-400 text-glow-cyan ml-3 sm:ml-4">RELAY</span>
+        {/* Main Hero Title (Stylish Futuristic Display Logo) */}
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black italic tracking-[0.08em] sm:tracking-[0.14em] uppercase leading-none mt-2 sm:mt-3 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-6">
+          <span className="text-white drop-shadow-[0_0_25px_rgba(255,255,255,0.45)]">CODE</span>
+          <span className="text-cyan-400 drop-shadow-[0_0_30px_rgba(6,182,212,0.65)] ml-3 sm:ml-4">RELAY</span>
         </h1>
       </motion.header>
 
@@ -90,7 +121,7 @@ export default function ParticipantLogin() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-[380px] sm:max-w-[420px] my-2 sm:my-3"
+        className="relative z-10 w-full max-w-[380px] sm:max-w-[420px]"
       >
         <div className="relative rounded-xl bg-[#040813]/65 backdrop-blur-xl border border-cyan-500/30 p-5 sm:p-7 shadow-[0_0_35px_-10px_rgba(6,182,212,0.2),0_20px_40px_-12px_rgba(0,0,0,0.85)] overflow-hidden">
           {/* Subtle Technical Grid */}
@@ -211,30 +242,6 @@ export default function ParticipantLogin() {
           </form>
         </div>
       </motion.main>
-
-      {/* ── FOOTER & ROLE SWITCHER ── */}
-      <motion.footer
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-        className="relative z-10 text-center pb-2"
-      >
-        <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-500">
-          <Link
-            to="/organizer/login"
-            className="hover:text-cyan-400 transition-colors tracking-wider"
-          >
-            Organizer Access
-          </Link>
-          <span className="text-slate-700">•</span>
-          <Link
-            to="/judge/login"
-            className="hover:text-cyan-400 transition-colors tracking-wider"
-          >
-            Judge Portal
-          </Link>
-        </div>
-      </motion.footer>
     </div>
   );
 }

@@ -21,6 +21,34 @@ export default function OrganizerLogin() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Client-side keyboard deterrence (F12, DevTools shortcuts, View Source)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F12') {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'U' || e.key === 'u')) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, []);
+
   // Redirect if already authenticated as organizer
   useEffect(() => {
     if (!isLoading && user?.role === 'organizer') {
@@ -81,18 +109,18 @@ export default function OrganizerLogin() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 text-center pt-2 sm:pt-4 w-full max-w-full overflow-hidden flex flex-col items-center"
+        className="relative z-10 text-center pt-2 sm:pt-4 w-full max-w-full overflow-hidden flex flex-col items-center mb-1 sm:mb-2"
       >
-        {/* Event/Brand Identifier (Small) */}
-        <p className="text-[11px] sm:text-xs font-mono tracking-[0.35em] uppercase text-slate-400 font-medium whitespace-nowrap">
-          <span className="text-slate-200 font-semibold">VIGYANTRA</span>
-          <span className="text-cyan-400 font-bold ml-1.5">2026</span>
-        </p>
+        {/* Event/Brand Identifier */}
+        <div className="flex items-center gap-2 text-xs sm:text-sm md:text-base font-mono tracking-[0.35em] sm:tracking-[0.45em] uppercase text-slate-300 font-semibold whitespace-nowrap">
+          <span className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">VIGYANTRA</span>
+          <span className="text-cyan-400 font-extrabold drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]">'26</span>
+        </div>
 
-        {/* Main Hero Title (Large, Bold, Futuristic) */}
-        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black tracking-[0.12em] sm:tracking-[0.18em] uppercase leading-none my-2 sm:my-3 whitespace-nowrap flex items-center justify-center">
-          <span className="text-white text-glow-white">CODE</span>
-          <span className="text-cyan-400 text-glow-cyan ml-3 sm:ml-4">RELAY</span>
+        {/* Main Hero Title (Stylish Futuristic Display Logo) */}
+        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black italic tracking-[0.08em] sm:tracking-[0.14em] uppercase leading-none mt-2 sm:mt-3 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-6">
+          <span className="text-white drop-shadow-[0_0_25px_rgba(255,255,255,0.45)]">CODE</span>
+          <span className="text-cyan-400 drop-shadow-[0_0_30px_rgba(6,182,212,0.65)] ml-3 sm:ml-4">RELAY</span>
         </h1>
       </motion.header>
 
