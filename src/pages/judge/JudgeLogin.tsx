@@ -126,15 +126,15 @@ export default function JudgeLogin() {
         className="relative z-10 text-center pt-2 sm:pt-4 w-full max-w-full overflow-hidden flex flex-col items-center mb-1 sm:mb-2"
       >
         {/* Event/Brand Identifier */}
-        <div className="flex items-center gap-2 text-xs sm:text-sm md:text-base font-mono tracking-[0.35em] sm:tracking-[0.45em] uppercase text-slate-300 font-semibold whitespace-nowrap">
+        <div className="font-novarese flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm md:text-base tracking-[0.22em] sm:tracking-[0.32em] uppercase text-slate-300 font-semibold whitespace-nowrap">
           <span className="text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">VIGYANTRA</span>
-          <span className="text-cyan-400 font-extrabold drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]">'26</span>
+          <span className="text-cyan-400 font-bold drop-shadow-[0_0_12px_rgba(6,182,212,0.4)]">'26</span>
         </div>
 
-        {/* Main Hero Title (Stylish Futuristic Display Logo) */}
-        <h1 className="text-4xl sm:text-6xl md:text-7xl font-black italic tracking-[0.08em] sm:tracking-[0.14em] uppercase leading-none mt-2 sm:mt-3 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-6">
-          <span className="text-white drop-shadow-[0_0_25px_rgba(255,255,255,0.45)]">CODE</span>
-          <span className="text-cyan-400 drop-shadow-[0_0_30px_rgba(6,182,212,0.65)] ml-3 sm:ml-4">RELAY</span>
+        {/* Main Hero Title (NOVARESE, Reduced Balanced Size, Stylish, Futuristic) */}
+        <h1 className="font-novarese text-2xl sm:text-4xl md:text-5xl font-bold italic tracking-[0.14em] sm:tracking-[0.2em] uppercase leading-tight mt-1.5 sm:mt-2.5 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-3">
+          <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.35)]">CODE</span>
+          <span className="text-cyan-400 drop-shadow-[0_0_20px_rgba(6,182,212,0.55)] ml-2.5 sm:ml-3.5">RELAY</span>
         </h1>
       </motion.header>
 

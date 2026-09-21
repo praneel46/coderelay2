@@ -33,6 +33,7 @@ export default {
         },
       },
       fontFamily: {
+        novarese: ['"Novarese"', '"ITC Novarese"', '"Cinzel"', '"Trajan Pro"', 'Georgia', 'serif'],
         mono: ['"JetBrains Mono"', '"Fira Code"', '"Cascadia Code"', 'Consolas', 'monospace'],
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
