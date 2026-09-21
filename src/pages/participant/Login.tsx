@@ -87,7 +87,7 @@ export default function ParticipantLogin() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col items-center justify-center px-4 py-6 sm:py-10 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
+      className="min-h-screen min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-4 sm:py-8 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
       style={{
         backgroundImage: "url('/images/login-bg.jpg')",
         backgroundColor: '#020409',
@@ -101,7 +101,7 @@ export default function ParticipantLogin() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 text-center w-full max-w-full overflow-hidden flex flex-col items-center mb-3 sm:mb-4"
+        className="relative z-10 text-center w-full max-w-full overflow-hidden flex flex-col items-center mb-3.5 sm:mb-5"
       >
         {/* Event/Brand Identifier */}
         <div className="font-novarese flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm md:text-base tracking-[0.22em] sm:tracking-[0.32em] uppercase text-slate-300 font-semibold whitespace-nowrap">
@@ -110,7 +110,7 @@ export default function ParticipantLogin() {
         </div>
 
         {/* Main Hero Title (NOVARESE, Reduced Balanced Size, Stylish, Futuristic) */}
-        <h1 className="font-novarese text-2xl sm:text-4xl md:text-5xl font-bold italic tracking-[0.14em] sm:tracking-[0.2em] uppercase leading-tight mt-1.5 sm:mt-2.5 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-3">
+        <h1 className="font-novarese text-2xl sm:text-4xl md:text-5xl font-bold italic tracking-[0.14em] sm:tracking-[0.2em] uppercase leading-tight mt-1 sm:mt-1.5 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-3">
           <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.35)]">CODE</span>
           <span className="text-cyan-400 drop-shadow-[0_0_20px_rgba(6,182,212,0.55)] ml-2.5 sm:ml-3.5">RELAY</span>
         </h1>

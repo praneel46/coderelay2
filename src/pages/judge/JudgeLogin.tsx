@@ -109,7 +109,7 @@ export default function JudgeLogin() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col items-center justify-between px-4 py-4 sm:py-8 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
+      className="min-h-screen min-h-[100dvh] w-full flex flex-col items-center justify-center px-4 py-4 sm:py-8 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
       style={{
         backgroundImage: "url('/images/login-bg.jpg')",
         backgroundColor: '#020409',
@@ -123,7 +123,7 @@ export default function JudgeLogin() {
         initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="relative z-10 text-center pt-2 sm:pt-4 w-full max-w-full overflow-hidden flex flex-col items-center mb-1 sm:mb-2"
+        className="relative z-10 text-center w-full max-w-full overflow-hidden flex flex-col items-center mb-3 sm:mb-4"
       >
         {/* Event/Brand Identifier */}
         <div className="font-novarese flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm md:text-base tracking-[0.22em] sm:tracking-[0.32em] uppercase text-slate-300 font-semibold whitespace-nowrap">
@@ -132,7 +132,7 @@ export default function JudgeLogin() {
         </div>
 
         {/* Main Hero Title (NOVARESE, Reduced Balanced Size, Stylish, Futuristic) */}
-        <h1 className="font-novarese text-2xl sm:text-4xl md:text-5xl font-bold italic tracking-[0.14em] sm:tracking-[0.2em] uppercase leading-tight mt-1.5 sm:mt-2.5 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-3">
+        <h1 className="font-novarese text-2xl sm:text-4xl md:text-5xl font-bold italic tracking-[0.14em] sm:tracking-[0.2em] uppercase leading-tight mt-1 sm:mt-1.5 whitespace-nowrap flex items-center justify-center select-none transform -skew-x-3">
           <span className="text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.35)]">CODE</span>
           <span className="text-cyan-400 drop-shadow-[0_0_20px_rgba(6,182,212,0.55)] ml-2.5 sm:ml-3.5">RELAY</span>
         </h1>
@@ -143,7 +143,7 @@ export default function JudgeLogin() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-[380px] sm:max-w-[420px] my-2 sm:my-3"
+        className="relative z-10 w-full max-w-[380px] sm:max-w-[420px]"
       >
         <div className="relative rounded-xl bg-[#040813]/65 backdrop-blur-xl border border-cyan-500/30 p-5 sm:p-7 shadow-[0_0_35px_-10px_rgba(6,182,212,0.2),0_20px_40px_-12px_rgba(0,0,0,0.85)] overflow-hidden">
           {/* Subtle Technical Grid */}
@@ -275,7 +275,7 @@ export default function JudgeLogin() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.2 }}
-        className="relative z-10 text-center pb-2"
+        className="relative z-10 text-center mt-3 sm:mt-4"
       >
         <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-500">
           <Link
