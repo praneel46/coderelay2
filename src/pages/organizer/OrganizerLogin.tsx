@@ -67,7 +67,7 @@ export default function OrganizerLogin() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col items-center justify-between px-4 py-6 sm:py-10 relative overflow-x-hidden bg-cover bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
+      className="min-h-screen w-full flex flex-col items-center justify-between px-3 sm:px-6 py-3 sm:py-6 relative overflow-x-hidden bg-cover bg-[center_top] sm:bg-center bg-no-repeat selection:bg-cyan-500/30 selection:text-cyan-200"
       style={{
         backgroundImage: "url('/images/login-bg.jpg')",
         backgroundColor: '#020409',
@@ -78,72 +78,71 @@ export default function OrganizerLogin() {
 
       {/* ── TOP BRANDING ── */}
       <motion.header
-        initial={{ opacity: 0, y: -16 }}
+        initial={{ opacity: 0, y: -12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="relative z-10 text-center pt-2 sm:pt-4"
+        transition={{ duration: 0.5, ease: 'easeOut' }}
+        className="relative z-10 text-center pt-1 sm:pt-2 w-full max-w-full overflow-hidden"
       >
-        <h1 className="text-xl sm:text-2xl font-black tracking-[0.35em] sm:tracking-[0.45em] text-white uppercase text-glow-white">
-          V I G Y A N T R A <span className="text-cyan-400 font-extrabold text-glow-cyan">2 0 2 6</span>
+        <h1 className="text-[clamp(1.15rem,5.5vw,1.85rem)] font-black tracking-[0.18em] sm:tracking-[0.35em] text-white uppercase text-glow-white whitespace-nowrap leading-none flex items-center justify-center">
+          <span>VIGYANTRA</span>
+          <span className="text-cyan-400 font-extrabold text-glow-cyan ml-2 sm:ml-3">2026</span>
         </h1>
-        <p className="text-xs sm:text-sm font-extrabold tracking-[0.4em] sm:tracking-[0.5em] text-slate-300 uppercase mt-1">
-          C O D E &nbsp; R E L A Y
+        <p className="text-[10px] sm:text-xs font-extrabold tracking-[0.3em] sm:tracking-[0.45em] text-slate-300 uppercase mt-1 whitespace-nowrap">
+          ORGANIZER PORTAL
         </p>
-        <div className="flex items-center justify-center gap-2 mt-2 text-[10px] sm:text-[11px] font-mono tracking-[0.25em] text-slate-400 uppercase">
-          <span>THINK</span>
+        <div className="flex items-center justify-center gap-1.5 sm:gap-2 mt-1 sm:mt-1.5 text-[8.5px] sm:text-[10px] font-mono tracking-[0.12em] sm:tracking-[0.2em] text-slate-400 uppercase whitespace-nowrap">
+          <span>CONTROL</span>
           <span className="text-cyan-400">•</span>
-          <span>CODE</span>
+          <span>MONITOR</span>
           <span className="text-cyan-400">•</span>
-          <span>DEBUG</span>
-          <span className="text-cyan-400">•</span>
-          <span>RELAY</span>
+          <span>EXECUTE</span>
         </div>
       </motion.header>
 
       {/* ── MAIN GLASS LOGIN CARD ── */}
       <motion.main
-        initial={{ opacity: 0, y: 16 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.15, ease: 'easeOut' }}
-        className="relative z-10 w-full max-w-[420px] sm:max-w-[460px] my-6"
+        transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+        className="relative z-10 w-full max-w-[390px] sm:max-w-[450px] my-2 sm:my-4"
       >
         {/* Glassmorphism Container with inner grid texture */}
-        <div className="relative rounded-2xl bg-[#060b14]/75 backdrop-blur-2xl border border-cyan-500/30 p-6 sm:p-8 shadow-[0_0_50px_-10px_rgba(6,182,212,0.18),0_25px_50px_-12px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.1),inset_0_0_20px_rgba(6,182,212,0.04)] overflow-hidden">
+        <div className="relative rounded-2xl bg-[#060b14]/80 backdrop-blur-2xl border border-cyan-500/30 p-4 sm:p-7 shadow-[0_0_35px_-10px_rgba(6,182,212,0.15),0_20px_40px_-12px_rgba(0,0,0,0.85),inset_0_1px_1px_rgba(255,255,255,0.08),inset_0_0_15px_rgba(6,182,212,0.03)] overflow-hidden">
           {/* Subtle internal architectural grid lines */}
           <div
-            className="absolute inset-0 pointer-events-none opacity-25"
+            className="absolute inset-0 pointer-events-none opacity-10 sm:opacity-15"
             style={{
               backgroundImage:
                 'linear-gradient(to right, rgba(34, 211, 238, 0.08) 1px, transparent 1px), linear-gradient(to bottom, rgba(34, 211, 238, 0.08) 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
+              backgroundSize: '20px 20px',
             }}
           />
 
           {/* Micro corner brackets */}
-          <div className="absolute top-2.5 left-2.5 w-2 h-2 border-t border-l border-cyan-400/50 pointer-events-none" />
-          <div className="absolute top-2.5 right-2.5 w-2 h-2 border-t border-r border-cyan-400/50 pointer-events-none" />
-          <div className="absolute bottom-2.5 left-2.5 w-2 h-2 border-b border-l border-cyan-400/50 pointer-events-none" />
-          <div className="absolute bottom-2.5 right-2.5 w-2 h-2 border-b border-r border-cyan-400/50 pointer-events-none" />
+          <div className="absolute top-2 left-2 w-2 h-2 border-t border-l border-cyan-400/40 pointer-events-none" />
+          <div className="absolute top-2 right-2 w-2 h-2 border-t border-r border-cyan-400/40 pointer-events-none" />
+          <div className="absolute bottom-2 left-2 w-2 h-2 border-b border-l border-cyan-400/40 pointer-events-none" />
+          <div className="absolute bottom-2 right-2 w-2 h-2 border-b border-r border-cyan-400/40 pointer-events-none" />
 
           {/* Glowing Top Icon */}
-          <div className="relative flex justify-center mb-3">
-            <div className="w-12 h-12 rounded-xl bg-cyan-950/60 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.3)]">
-              <Sliders className="w-6 h-6 text-cyan-400" />
+          <div className="relative flex justify-center mb-2 sm:mb-2.5">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-cyan-950/60 border border-cyan-400/40 flex items-center justify-center text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.25)]">
+              <Sliders className="w-5 h-5 sm:w-6 sm:h-6 text-cyan-400" />
             </div>
           </div>
 
           {/* Role & Titles */}
-          <div className="relative text-center mb-6">
-            <p className="text-[11px] font-mono tracking-[0.25em] text-cyan-400 font-semibold uppercase mb-1">
-              O R G A N I Z E R &nbsp; A C C E S S
+          <div className="relative text-center mb-4 sm:mb-5">
+            <p className="text-[10px] sm:text-[11px] font-mono tracking-[0.2em] sm:tracking-[0.25em] text-cyan-400 font-semibold uppercase mb-0.5 whitespace-nowrap">
+              ORGANIZER ACCESS
             </p>
-            <h2 className="text-2xl sm:text-[26px] font-black tracking-wider text-white uppercase text-glow-white mb-1">
+            <h2 className="text-xl sm:text-2xl font-black tracking-wide text-white uppercase text-glow-white mb-0.5 whitespace-nowrap">
               ORGANIZER ACCESS
             </h2>
-            <p className="text-[11px] font-mono tracking-[0.2em] text-slate-300 uppercase font-semibold mb-2">
+            <p className="text-[9.5px] sm:text-[10.5px] font-mono tracking-[0.15em] sm:tracking-[0.2em] text-slate-300 uppercase font-semibold mb-1 sm:mb-1.5 whitespace-nowrap">
               CONTROL • MONITOR • EXECUTE
             </p>
-            <p className="text-slate-400 text-xs font-sans leading-relaxed max-w-[320px] mx-auto">
+            <p className="text-slate-400 text-[11px] sm:text-xs font-sans leading-snug max-w-[280px] sm:max-w-[320px] mx-auto">
               Sign in to manage teams, control rounds and oversee the competition.
             </p>
           </div>
@@ -153,29 +152,29 @@ export default function OrganizerLogin() {
             <motion.div
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
-              className="relative mb-5 flex items-start gap-2.5 bg-red-950/50 border border-red-500/40 rounded-xl px-3.5 py-2.5 text-red-300 text-xs font-mono shadow-[0_0_15px_rgba(239,68,68,0.2)]"
+              className="relative mb-4 flex items-start gap-2 bg-red-950/50 border border-red-500/40 rounded-lg px-3 py-2 text-red-300 text-[11px] font-mono shadow-[0_0_15px_rgba(239,68,68,0.2)]"
             >
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />
               <span>{error}</span>
             </motion.div>
           )}
 
           {/* Primary Action: Google Sign-In with Role Verification */}
-          <div className="relative space-y-4">
+          <div className="relative space-y-3 sm:space-y-3.5">
             <button
               type="button"
               onClick={handleGoogleSignIn}
               disabled={googleSubmitting || submitting}
-              className="w-full py-3 px-4 rounded-xl bg-[#09111e]/90 hover:bg-[#0e182c] border border-cyan-500/30 hover:border-cyan-400/60 text-slate-100 font-mono text-sm font-semibold flex items-center justify-center gap-3 transition-all duration-200 shadow-[0_0_20px_rgba(6,182,212,0.12)] hover:shadow-[0_0_25px_rgba(6,182,212,0.25)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-2.5 sm:py-3 px-3.5 sm:px-4 rounded-lg sm:rounded-xl bg-[#09111e]/90 hover:bg-[#0e182c] border border-cyan-500/30 hover:border-cyan-400/60 text-slate-100 font-mono text-xs sm:text-sm font-semibold flex items-center justify-center gap-2.5 transition-all duration-200 shadow-[0_0_15px_rgba(6,182,212,0.12)] hover:shadow-[0_0_20px_rgba(6,182,212,0.25)] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {googleSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                  <span>Verifying Organizer Role…</span>
+                  <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-cyan-400" />
+                  <span>Verifying Role…</span>
                 </>
               ) : (
                 <>
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" viewBox="0 0 24 24">
                     <path
                       fill="#4285F4"
                       d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -199,22 +198,22 @@ export default function OrganizerLogin() {
             </button>
 
             {/* Divider */}
-            <div className="relative flex items-center py-1">
+            <div className="relative flex items-center py-0.5">
               <div className="flex-grow border-t border-cyan-900/40"></div>
-              <span className="flex-shrink mx-3 text-[10px] font-mono text-slate-500 uppercase tracking-widest">
+              <span className="flex-shrink mx-2.5 text-[9.5px] sm:text-[10px] font-mono text-slate-500 uppercase tracking-widest">
                 OR
               </span>
               <div className="flex-grow border-t border-cyan-900/40"></div>
             </div>
 
             {/* Credential Form */}
-            <form onSubmit={handleSubmit} className="space-y-3" noValidate>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-mono tracking-[0.15em] text-slate-400 uppercase pl-1">
+            <form onSubmit={handleSubmit} className="space-y-2.5 sm:space-y-3" noValidate>
+              <div className="space-y-0.5 sm:space-y-1">
+                <label className="block text-[9.5px] sm:text-[10px] font-mono tracking-[0.15em] text-slate-400 uppercase pl-1">
                   Organizer Key
                 </label>
                 <div className="relative group">
-                  <Lock className="w-4 h-4 text-cyan-500/70 absolute left-3.5 top-1/2 -translate-y-1/2 transition-colors group-focus-within:text-cyan-400" />
+                  <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-500/70 absolute left-3 sm:left-3.5 top-1/2 -translate-y-1/2 transition-colors group-focus-within:text-cyan-400" />
                   <input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
@@ -225,16 +224,16 @@ export default function OrganizerLogin() {
                     placeholder="Enter organizer password"
                     autoComplete="current-password"
                     disabled={submitting || googleSubmitting}
-                    className="w-full bg-[#08101e]/85 border border-cyan-500/25 focus:border-cyan-400 rounded-xl pl-10 pr-11 py-3 text-slate-100 placeholder:text-slate-600 font-mono text-sm outline-none transition-all duration-200 focus:ring-1 focus:ring-cyan-400/40 focus:shadow-[0_0_20px_rgba(6,182,212,0.15)] disabled:opacity-50"
+                    className="w-full bg-[#08101e]/85 border border-cyan-500/25 focus:border-cyan-400 rounded-lg sm:rounded-xl pl-9 sm:pl-10 pr-10 py-2.5 sm:py-3 text-slate-100 placeholder:text-slate-600 font-mono text-xs sm:text-sm outline-none transition-all duration-200 focus:ring-1 focus:ring-cyan-400/40 focus:shadow-[0_0_15px_rgba(6,182,212,0.15)] disabled:opacity-50"
                   />
                   <button
                     type="button"
                     tabIndex={-1}
                     onClick={() => setShowPassword((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-300 transition-colors p-1"
+                    className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-cyan-300 transition-colors p-1"
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showPassword ? <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
                   </button>
                 </div>
               </div>
@@ -242,16 +241,16 @@ export default function OrganizerLogin() {
               <button
                 type="submit"
                 disabled={submitting || googleSubmitting || !password.trim()}
-                className="w-full py-3 px-4 rounded-xl font-mono text-sm font-bold tracking-wider text-cyan-100 uppercase bg-gradient-to-r from-blue-950 via-cyan-900/90 to-blue-950 hover:from-blue-900 hover:via-cyan-800 hover:to-blue-900 border border-cyan-400/50 hover:border-cyan-300 shadow-[0_0_25px_rgba(6,182,212,0.2)] hover:shadow-[0_0_35px_rgba(6,182,212,0.4)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                className="w-full py-2.5 sm:py-3 px-4 rounded-lg sm:rounded-xl font-mono text-xs sm:text-sm font-bold tracking-wider text-cyan-100 uppercase bg-gradient-to-r from-blue-950 via-cyan-900/90 to-blue-950 hover:from-blue-900 hover:via-cyan-800 hover:to-blue-900 border border-cyan-400/50 hover:border-cyan-300 shadow-[0_0_20px_rgba(6,182,212,0.2)] hover:shadow-[0_0_30px_rgba(6,182,212,0.35)] hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
+                    <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin text-cyan-300" />
                     <span>AUTHENTICATING…</span>
                   </>
                 ) : (
                   <>
-                    <KeyRound className="w-4 h-4 text-cyan-300" />
+                    <KeyRound className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-cyan-300" />
                     <span>Sign in with Credentials</span>
                   </>
                 )}
@@ -260,8 +259,8 @@ export default function OrganizerLogin() {
           </div>
 
           {/* Security Notice */}
-          <div className="relative mt-6 pt-4 border-t border-cyan-900/30 flex items-center justify-center gap-1.5 text-[11px] font-mono text-slate-400">
-            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400/80" />
+          <div className="relative mt-3.5 sm:mt-5 pt-2.5 sm:pt-3 border-t border-cyan-900/30 flex items-center justify-center gap-1.5 text-[10px] sm:text-[11px] font-mono text-slate-400">
+            <ShieldCheck className="w-3 h-3 text-cyan-400/80" />
             <span>Restricted access for authorized organizers</span>
           </div>
         </div>
@@ -271,13 +270,13 @@ export default function OrganizerLogin() {
       <motion.footer
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
-        className="relative z-10 text-center pb-2 space-y-2"
+        transition={{ duration: 0.5, delay: 0.2 }}
+        className="relative z-10 text-center pb-1 sm:pb-2 space-y-1 sm:space-y-1.5"
       >
-        <p className="text-[11px] font-mono tracking-[0.35em] text-slate-400 uppercase font-semibold">
-          M A K E &nbsp; I T &nbsp; H A P P E N
+        <p className="text-[9.5px] sm:text-[11px] font-mono tracking-[0.25em] sm:tracking-[0.35em] text-slate-400 uppercase font-semibold whitespace-nowrap">
+          MAKE IT HAPPEN
         </p>
-        <div className="flex items-center justify-center gap-4 text-xs font-mono text-slate-500">
+        <div className="flex items-center justify-center gap-3 sm:gap-4 text-[11px] sm:text-xs font-mono text-slate-500">
           <Link
             to="/participant/login"
             className="hover:text-cyan-400 transition-colors tracking-wider"
